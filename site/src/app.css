@@ -1,0 +1,43 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/archivo";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+/* Tokens of the main site ("Épure"): warm near-white paper, dark ink and a
+   single deep-red accent. Labs has no theme toggle, so the dark palette
+   follows the operating system. */
+:root {
+  color-scheme: light dark;
+  --radius: 0.625rem;
+  --background: oklch(0.984 0.002 106);
+  --foreground: oklch(0.24 0.005 106);
+  --card: oklch(1 0 0);
+  --muted-foreground: oklch(0.52 0.008 106);
+  --primary: oklch(0.46 0.15 20);
+  --border: oklch(0.917 0.004 106);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: oklch(0.195 0.004 106);
+    --foreground: oklch(0.95 0.002 106);
+    --card: oklch(0.235 0.004 106);
+    --muted-foreground: oklch(0.71 0.005 106);
+    --primary: oklch(0.62 0.13 20);
+    --border: oklch(1 0 0 / 10%);
+  }
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Archivo Variable", "Inter Variable", ui-sans-serif, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --radius-lg: var(--radius);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-border: var(--border);
+}
