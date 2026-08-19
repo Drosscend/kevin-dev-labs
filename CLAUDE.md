@@ -47,17 +47,9 @@ lien, ne sont jamais indexées et n'ont aucune page de connexion.
 
 ## Déployer
 
-- Push sur `main` : Dokploy construit le `Dockerfile` et redémarre le service.
-- Déclencher à la main, jeton dans `~/.dokploy-token` :
-
-```bash
-curl -s -X POST https://dokploy.kevin-dev.com/api/compose.deploy -H "x-api-key: $DOKPLOY_TOKEN" -H "Content-Type: application/json" -d '{"composeId":"NoLSoEjZWkHVu_-VDi5KO"}'
-```
-
-- Service Dokploy : projet `labs`, compose `labs`, `appName` `labs-cq9xu9`.
-- Domaine : `labs.kevin-dev.com`, service `app`, port interne **80**,
-  `letsencrypt`, middleware `noindex@file`.
-- Vérifier après déploiement :
+- Push sur `main` : le `Dockerfile` est construit et le site mis en ligne
+  automatiquement. Rien d'autre à faire.
+- Vérifier une fois le déploiement passé :
 
 ```bash
 curl -sI https://labs.kevin-dev.com/ | grep -i "x-robots"
@@ -70,8 +62,8 @@ curl -sI https://labs.kevin-dev.com/ | grep -i "x-robots"
 - Ne pas mettre de secret ni de donnée personnelle : le dépôt est public et le
   site est ouvert à qui a le lien.
 - Ne pas ajouter de page de connexion ni d'authentification.
-- Ne pas retirer `robots.txt`, l'en-tête de `Caddyfile` ni le middleware
-  `noindex@file` : les trois protègent la même chose, à trois étages.
+- Ne pas retirer `robots.txt` ni l'en-tête `X-Robots-Tag` du `Caddyfile` : le
+  proxy en pose un troisième, les trois protègent la même chose.
 - Ne pas ajouter de backend : Caddy ne sert que des fichiers. Une expérience
   qui a besoin d'un serveur ne va pas ici.
 - Ne pas référencer d'asset par un chemin absolu dans une expérience buildée.

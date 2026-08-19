@@ -31,8 +31,8 @@ bunx serve dist
 
 ## Déploiement
 
-Service Compose Dokploy, domaine `labs.kevin-dev.com`, port interne 80.
-La procédure complète est dans `Homelab/deploy/new-project.md`.
+Un push sur `main` construit le `Dockerfile` et met le site en ligne sur
+`labs.kevin-dev.com`.
 
 Caddy pose `X-Robots-Tag: noindex` sur toute réponse, et `robots.txt`
 interdit l'ensemble du domaine : les expériences restent hors des moteurs
