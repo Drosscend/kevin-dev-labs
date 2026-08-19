@@ -65,10 +65,23 @@ Puis http://localhost:5180
   répertoire et la cadence dépendent de l'humeur : de l'ordre d'un geste toutes les vingt
   secondes quand elle joue, toutes les minutes quand elle dort, avec une forte part de hasard
   sur l'attente. Le même geste ne revient jamais deux fois de suite.
+- **Identité** : une graine tirée au premier chargement et gardée dans le navigateur décide qui
+  elle est. Sa taille, la finesse de ses veines, ses lobes, sa marque de naissance, son
+  tempérament, sa vivacité, sa timidité, la hauteur de sa nappe, les gestes qui lui manquent et
+  celui qu'elle préfère. Et sa lecture des couleurs : chaque humeur reçoit un décalage de teinte
+  propre à elle, donc la correspondance est stable pour une créature et intransmissible d'une
+  créature à l'autre. Deux navigateurs n'en ont pas la même, et ne peuvent pas la lire pareil.
 - **Familiarité** : la présence et le contact la font monter en une trentaine de secondes, elle
   retombe en deux ou trois minutes d'absence. Une créature qui vous connaît sursaute moins fort,
   joue plus vite, veille plus longtemps et prend une teinte plus chaude. Ignorée, elle s'ennuie,
-  et l'ennui accélère ses gestes. Rien n'est conservé d'une visite à l'autre.
+  et l'ennui accélère ses gestes.
+- **Ce qu'elle garde** : la graine, la familiarité, deux tolérances (frapper souvent la vitre
+  finit par ne plus la surprendre ; l'approcher sans la faire fuir lui apprend qu'une main de
+  près est vivable), le coin où elle revient, et jusqu'à cinq marques laissées là où une main
+  s'est attardée plus d'une seconde et demie. Tout cela refroidit pendant votre absence : la
+  familiarité en deux jours et demi, les tolérances en cinq, les marques en un mois. Rien ne
+  sort du navigateur. Vider les données du site la tue, et une autre naît, sans récupération
+  possible. Raccourci de secours, jamais annoncé à l'écran : `Maj + N` en fait naître une autre.
 - **Humeurs** : cinq états, jamais nommés à l'écran, jamais écrits nulle part pour le visiteur.
   Décidés par l'inactivité, la vitesse du curseur, sa proximité et les coups sur la vitre, avec
   des seuils qui glissent selon la familiarité. Chaque humeur porte sa palette, sa profondeur de
@@ -94,6 +107,8 @@ Puis http://localhost:5180
 - `src/main.ts` : boucle, câblage, contact du curseur
 - `src/vivarium.ts` : le volume, ses parois et son fond, déduits du champ de la caméra
 - `src/presence.ts` : le visiteur vu de l'intérieur, sa place, sa vitesse, ses coups
+- `src/traits.ts` : ce que la graine décide, du corps au vocabulaire de couleurs
+- `src/memory.ts` : ce qui survit à l'onglet, et son refroidissement
 - `src/mind.ts` : profils d'humeur, machine à états, familiarité, curiosité et peur
 - `src/locomotion.ts` : nage par à-coups, cap, fuite, dépôt au fond
 - `src/vitals.ts` : gonflement et impulsions

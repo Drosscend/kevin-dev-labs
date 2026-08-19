@@ -14,6 +14,10 @@ export interface Swim {
   knocked: boolean;
   /** How much it is holding its own movement back, 0 to 1. */
   still: number;
+  /** How hard and how often this one pushes, compared to any other. */
+  quickness: number;
+  /** The corner it has made its own over past visits, if it has one. */
+  home: Vector3 | null;
 }
 
 const ease = (dt: number, rate: number) => 1 - Math.exp(-rate * dt);
@@ -82,12 +86,20 @@ export class Locomotion {
     if (mood.sink > 0.01) {
       this.aim.y = MathUtils.lerp(this.aim.y, vivarium.floor(wantZ, radius * 0.9), mood.sink);
     }
-    this.aim.z = wantZ;
+    // Left to itself, it drifts back to the corner it has been using.
+    if (swim.home && curiosity < 0.4 && fear < 0.3) {
+      const settle = 0.55 * (1 - curiosity / 0.4) * (1 - fear / 0.3);
+      this.aim.x = MathUtils.lerp(this.aim.x, swim.home.x, settle);
+      this.aim.y = MathUtils.lerp(this.aim.y, swim.home.y, settle);
+      this.aim.z = MathUtils.lerp(wantZ, swim.home.z, settle * 0.6);
+    } else {
+      this.aim.z = wantZ;
+    }
 
     this.phase += dt / this.period;
     if (this.phase >= 1) {
       this.phase -= 1;
-      this.period = (0.55 + Math.random() * 0.95) / Math.max(mood.pace, 0.05);
+      this.period = (0.55 + Math.random() * 0.95) / Math.max(mood.pace * swim.quickness, 0.05);
       this.pushed = false;
     }
     const gathering = MathUtils.clamp(this.phase / 0.34, 0, 1);
@@ -100,7 +112,10 @@ export class Locomotion {
       this.pushed = true;
       if (this.frozen <= 0 && gap > 0.03 && swim.still < 0.5) {
         const urge = MathUtils.clamp(gap / 0.7, 0.15, 1);
-        this.velocity.addScaledVector(this.course, (mood.vigor * urge * 0.9) / gap);
+        this.velocity.addScaledVector(
+          this.course,
+          (mood.vigor * swim.quickness * urge * 0.9) / gap,
+        );
       }
     }
 

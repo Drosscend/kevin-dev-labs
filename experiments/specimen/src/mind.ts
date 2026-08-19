@@ -1,4 +1,5 @@
 import { Color } from "three";
+import type { Traits } from "./traits";
 
 export type MoodName = "resting" | "curious" | "playful" | "startled" | "dreaming";
 
@@ -160,12 +161,21 @@ function approach(from: number, to: number, rate: number, dt: number): number {
   return from + (to - from) * (1 - Math.exp(-rate * dt));
 }
 
+export interface Learned {
+  familiarity: number;
+  knockTolerance: number;
+  nearTolerance: number;
+}
+
 /** Decides how the creature feels, and keeps every rendered value drifting there smoothly. */
 export class Mind {
   name: MoodName = "dreaming";
   readonly felt: MoodProfile = clone(PROFILES.dreaming);
   /** How used to the visitor it is. Builds up while touched, fades over a couple of minutes. */
-  familiarity = 0;
+  familiarity: number;
+  /** How little a knock still frightens it, and how little a hand nearby does. */
+  knockTolerance: number;
+  nearTolerance: number;
   /** How badly it wants something to happen. Only builds once it knows the visitor. */
   boredom = 0;
   /** Wants to come closer. */
@@ -176,8 +186,18 @@ export class Mind {
   private energy = 0;
   private startle = 0;
   private held = 0;
+  private readonly warmDeep = new Color();
   private readonly warmSkin = new Color();
   private readonly warmVein = new Color();
+
+  constructor(
+    private readonly traits: Traits,
+    learned: Learned,
+  ) {
+    this.familiarity = clamp01(learned.familiarity);
+    this.knockTolerance = clamp01(learned.knockTolerance);
+    this.nearTolerance = clamp01(learned.nearTolerance);
+  }
 
   update(dt: number, senses: Senses): void {
     this.energy += senses.pointerSpeed * dt * 2.4 - this.energy * dt * 0.7;
@@ -192,8 +212,16 @@ export class Mind {
 
     this.drives(dt, senses);
 
-    // A creature that knows you stops jumping at every knock.
-    if (senses.knocked) this.startle = (1.4 + Math.random() * 0.9) * (1 - this.familiarity * 0.55);
+    // A creature that knows you, and that has been knocked at often enough, stops jumping.
+    if (senses.knocked) {
+      this.knockTolerance = Math.min(1, this.knockTolerance + 0.055);
+      this.startle =
+        (1.4 + Math.random() * 0.9) *
+        (1 - this.familiarity * 0.55) *
+        (1 - this.knockTolerance * 0.6);
+    }
+    // Being approached without fleeing is how it learns that a hand nearby is survivable.
+    if (senses.crowded > 0.45) this.nearTolerance = Math.min(1, this.nearTolerance + dt * 0.03);
     this.startle = Math.max(0, this.startle - dt);
     this.held += dt;
 
@@ -208,11 +236,17 @@ export class Mind {
     const colorRate = this.name === "startled" ? 7 : 0.85;
     const k = 1 - Math.exp(-colorRate * dt);
 
+    // Its own reading of this mood: another creature says the same thing in another colour.
+    const hue = this.traits.hues[this.name];
     const warmth = this.familiarity * 0.17;
-    this.warmSkin.copy(target.skin).lerp(WARM, warmth);
-    this.warmVein.copy(target.vein).lerp(WARM, warmth * 0.6);
+    this.warmDeep.copy(target.deep).offsetHSL(hue, 0, 0);
+    this.warmSkin.copy(target.skin).offsetHSL(hue, 0, 0).lerp(WARM, warmth);
+    this.warmVein
+      .copy(target.vein)
+      .offsetHSL(hue, 0, 0)
+      .lerp(WARM, warmth * 0.6);
 
-    this.felt.deep.lerp(target.deep, k);
+    this.felt.deep.lerp(this.warmDeep, k);
     this.felt.skin.lerp(this.warmSkin, k);
     this.felt.vein.lerp(this.warmVein, k);
 
@@ -241,11 +275,13 @@ export class Mind {
   private drives(dt: number, senses: Senses): void {
     const crowded = senses.crowded;
     const rush = clamp01((senses.pointerSpeed - 2.5) / 5);
-    const shyness = 1 - this.familiarity * 0.45;
-    const pressed = clamp01(crowded * (0.55 + rush * 0.7)) * shyness;
+    const shyness = this.traits.shyness * (1 - this.familiarity * 0.45);
+    const pressed =
+      clamp01(crowded * (0.55 + rush * 0.7)) * shyness * (1 - this.nearTolerance * 0.45);
 
     if (senses.knocked) {
-      this.fear = Math.min(1, this.fear + (0.55 + Math.random() * 0.35) * shyness);
+      const jump = (0.55 + Math.random() * 0.35) * shyness * (1 - this.knockTolerance * 0.6);
+      this.fear = Math.min(1, this.fear + jump);
     }
     const climbing = pressed > this.fear;
     this.fear = approach(this.fear, pressed, climbing ? 1.1 : 0.34, dt);
@@ -257,7 +293,7 @@ export class Mind {
   private decide(senses: Senses): MoodName {
     if (this.startle > 0 || this.fear > 0.62) return "startled";
     if (senses.idleTime > 15 + this.familiarity * 12) return "dreaming";
-    if (this.energy > 2.6 - this.familiarity * 1.2) return "playful";
+    if (this.energy > (2.6 - this.familiarity * 1.2) / this.traits.temper) return "playful";
     if (senses.idleTime < 2.5 + this.familiarity * 2 || senses.pointerNear > 0.5) return "curious";
     return "resting";
   }

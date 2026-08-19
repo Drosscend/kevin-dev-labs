@@ -1,4 +1,5 @@
 import type { MoodName } from "./mind";
+import type { Traits } from "./traits";
 
 export type GestureKind = "discharge" | "clench" | "flare" | "adrift" | "stillness";
 
@@ -74,11 +75,13 @@ const SHAPES: Record<GestureKind, Shape> = {
   },
 };
 
+interface Entry {
+  weights: Partial<Record<GestureKind, number>>;
+  wait: number;
+}
+
 /** What each mood is liable to do on its own, and how long it waits between two urges. */
-const REPERTOIRE: Record<
-  MoodName,
-  { weights: Partial<Record<GestureKind, number>>; wait: number }
-> = {
+const REPERTOIRE: Record<MoodName, Entry> = {
   dreaming: { weights: { adrift: 3, clench: 1.2, stillness: 1 }, wait: 32 },
   resting: {
     weights: { adrift: 2, stillness: 1.6, clench: 1.4, flare: 0.8, discharge: 0.5 },
@@ -136,6 +139,21 @@ export class Urges {
   private last: GestureKind | null = null;
   private elapsed = 0;
   private countdown = 12;
+  private readonly book: Record<MoodName, Entry>;
+
+  /** Every creature is missing something, and leans on something else. */
+  constructor(traits: Traits) {
+    this.book = {} as Record<MoodName, Entry>;
+    for (const [mood, entry] of Object.entries(REPERTOIRE) as [MoodName, Entry][]) {
+      const weights: Partial<Record<GestureKind, number>> = {};
+      for (const [kind, weight] of Object.entries(entry.weights) as [GestureKind, number][]) {
+        if (traits.missing.includes(kind)) continue;
+        weights[kind] = weight * (kind === traits.favours ? 2.4 : 1);
+      }
+      if (Object.keys(weights).length === 0) weights.discharge = 1;
+      this.book[mood] = { weights, wait: entry.wait };
+    }
+  }
 
   update(dt: number, mood: MoodName, restlessness: number): void {
     const out = this.out;
@@ -167,7 +185,7 @@ export class Urges {
     this.countdown -= dt * (1 + restlessness * 1.1);
     if (this.countdown > 0) return;
 
-    const repertoire = REPERTOIRE[mood];
+    const repertoire = this.book[mood];
     this.kind = pick(repertoire.weights, this.last);
     this.last = this.kind;
     this.elapsed = 0;

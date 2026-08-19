@@ -15,11 +15,13 @@ import { Body } from "./body";
 import { Gaze } from "./gaze";
 import { Urges } from "./impulses";
 import { Locomotion } from "./locomotion";
+import { Memory } from "./memory";
 import { Mind } from "./mind";
 import { Mist } from "./mist";
 import { createPost } from "./post";
 import { Presence } from "./presence";
 import { Trace } from "./trace";
+import { traitsFrom } from "./traits";
 import { Vitals } from "./vitals";
 import { Vivarium } from "./vivarium";
 
@@ -47,21 +49,28 @@ const camera = new PerspectiveCamera(42, window.innerWidth / window.innerHeight,
 camera.position.set(0, 0, 3.9);
 camera.lookAt(0, 0, 0);
 
-const body = new Body();
+// Which creature this browser hatched, and what it has made of you.
+const memory = new Memory();
+const traits = traitsFrom(memory.state.seed);
+
+const body = new Body(traits);
 body.resize(camera.aspect);
+body.remember(memory.state.marks);
 scene.add(body.group);
 
 const post = createPost(renderer, scene, camera);
 const vivarium = new Vivarium(camera);
 const presence = new Presence();
-const mind = new Mind();
+const mind = new Mind(traits, memory.state);
 const gaze = new Gaze();
-const urges = new Urges();
+const urges = new Urges(traits);
 const vitals = new Vitals();
 const locomotion = new Locomotion();
-const ambience = new Ambience();
+const ambience = new Ambience(traits.timbre);
 const trace = new Trace();
 const mist = new Mist();
+
+let home = memory.state.home ? new Vector3(...memory.state.home) : null;
 
 const raycaster = new Raycaster();
 const bounds = new Sphere(new Vector3(), 1);
@@ -69,6 +78,7 @@ const hitPoint = new Vector3();
 const lookDir = new Vector3(0, 0, 1);
 const touchDir = new Vector3(0, 0, 1);
 const localTouch = new Vector3(0, 0, 1);
+const markDir = new Vector3(0, 0, 1);
 const onScreen = new Vector3();
 const span = new Vector2();
 
@@ -77,6 +87,7 @@ let touch = 0;
 let press = 0;
 let dwell = 0;
 let shy = 0;
+let markDwell = 0;
 let greeted = false;
 let knockAge = -1;
 let knockX = 0.5;
@@ -87,6 +98,14 @@ const clamp01 = (value: number) => MathUtils.clamp(value, 0, 1);
 /** How much of it is within reach of the pane, and so of the visitor. */
 const atGlass = (z: number, radius: number) =>
   clamp01((z - (vivarium.glass - radius * 2.6)) / (radius * 1.3));
+
+// A corner remembered from a wider window may no longer be inside this one.
+if (home) {
+  home.z = MathUtils.clamp(home.z, vivarium.back, vivarium.glass);
+  vivarium.extent(home.z, span);
+  home.x = MathUtils.clamp(home.x, -span.x, span.x);
+  home.y = MathUtils.clamp(home.y, -span.y, span.y);
+}
 
 presence.listen(() => ambience.wake());
 
@@ -99,9 +118,28 @@ window.addEventListener("resize", () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.resize(window.innerWidth, window.innerHeight);
 });
+function remember(): void {
+  memory.state.familiarity = mind.familiarity;
+  memory.state.knockTolerance = mind.knockTolerance;
+  memory.state.nearTolerance = mind.nearTolerance;
+  memory.save();
+}
+
 document.addEventListener("visibilitychange", () => {
-  if (document.hidden) ambience.suspend();
-  else ambience.wake();
+  if (document.hidden) {
+    remember();
+    ambience.suspend();
+  } else {
+    ambience.wake();
+  }
+});
+window.addEventListener("pagehide", remember);
+window.addEventListener("keydown", (event) => {
+  // Undocumented on purpose: this one dies and another hatches.
+  if (event.shiftKey && event.key.toLowerCase() === "n") {
+    memory.forget();
+    location.reload();
+  }
 });
 
 const timer = new Timer();
@@ -183,7 +221,16 @@ renderer.setAnimationLoop((timestamp: number) => {
     radius,
     knocked: presence.knocked,
     still: urge.still,
+    quickness: traits.quickness,
+    home,
   });
+
+  // Wherever it keeps ending up when nothing is asking anything of it becomes its corner.
+  if (mind.curiosity < 0.4 && mind.fear < 0.25) {
+    if (home) home.lerp(locomotion.position, dt * 0.02);
+    else home = locomotion.position.clone();
+    memory.state.home = [home.x, home.y, home.z];
+  }
 
   spike -= spike * ease(dt, 3.4);
   const startle = spike + urge.jolt * 0.5;
@@ -201,6 +248,22 @@ renderer.setAnimationLoop((timestamp: number) => {
 
   body.localize(touchDir, localTouch);
   trace.update(renderer, dt, localTouch, press * 0.55, 0.21);
+
+  // A hand that stays on the same spot long enough leaves something that does not wash off.
+  if (press > 0.55) {
+    if (localTouch.dot(markDir) > 0.9) markDwell += dt;
+    else {
+      markDir.copy(localTouch);
+      markDwell = 0;
+    }
+    if (markDwell > 1.6) {
+      markDwell = 0;
+      memory.markAt(markDir, 0.18);
+      body.remember(memory.state.marks);
+    }
+  } else {
+    markDwell = Math.max(0, markDwell - dt);
+  }
 
   body.update(
     {
@@ -249,6 +312,11 @@ renderer.setAnimationLoop((timestamp: number) => {
     knockAge,
     aspect: camera.aspect,
   });
+  memory.state.familiarity = mind.familiarity;
+  memory.state.knockTolerance = mind.knockTolerance;
+  memory.state.nearTolerance = mind.nearTolerance;
+  memory.keep(dt);
+
   post.setBloom(mood.bloom * (1 + vitals.pulse * 0.07) + startle * 0.12);
   post.setGrade(time, (vitals.pulse + startle) * 0.3, 0.3 + mood.agitation * 0.55);
   post.composer.render();

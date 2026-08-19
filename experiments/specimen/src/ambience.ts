@@ -60,6 +60,9 @@ export class Ambience {
   private grain: AudioBuffer | null = null;
   private lastBreath = 0;
 
+  /** Where this one sits, against any other of its kind. */
+  constructor(private readonly pitch: number) {}
+
   /** Browsers only allow audio after a gesture, so this is safe to call on every pointer event. */
   wake(): void {
     if (!this.ctx) {
@@ -81,9 +84,10 @@ export class Ambience {
     const now = ctx.currentTime;
     const timbre = TIMBRES[state.mood];
 
-    this.partials[0]?.frequency.setTargetAtTime(timbre.root, now, 0.9);
-    this.partials[1]?.frequency.setTargetAtTime(timbre.root * timbre.interval, now, 0.9);
-    this.partials[2]?.frequency.setTargetAtTime(timbre.root * 2, now, 0.9);
+    const root = timbre.root * this.pitch;
+    this.partials[0]?.frequency.setTargetAtTime(root, now, 0.9);
+    this.partials[1]?.frequency.setTargetAtTime(root * timbre.interval, now, 0.9);
+    this.partials[2]?.frequency.setTargetAtTime(root * 2, now, 0.9);
     this.partials[1]?.detune.setTargetAtTime(6 + timbre.shimmer * 14, now, 1.2);
     this.partials[2]?.detune.setTargetAtTime(-9 - timbre.shimmer * 11, now, 1.2);
 
@@ -276,8 +280,8 @@ export class Ambience {
     // Just enough body underneath to say the crack came from something.
     const low = ctx.createOscillator();
     low.type = "sine";
-    low.frequency.setValueAtTime(timbre.root * 2.1, at);
-    low.frequency.exponentialRampToValueAtTime(timbre.root * 1.2, at + 0.09);
+    low.frequency.setValueAtTime(timbre.root * this.pitch * 2.1, at);
+    low.frequency.exponentialRampToValueAtTime(timbre.root * this.pitch * 1.2, at + 0.09);
     const belly = ctx.createGain();
     belly.gain.setValueAtTime(0.0001, at);
     belly.gain.linearRampToValueAtTime(SPARK_LEVEL * level * 0.5, at + 0.006);

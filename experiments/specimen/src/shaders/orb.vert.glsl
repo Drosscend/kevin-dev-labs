@@ -10,6 +10,8 @@ uniform float uShiver;
 uniform float uTouch;
 uniform vec3 uTouchDir;
 uniform vec3 uFlow;
+uniform float uLobes;
+uniform float uLobeDepth;
 uniform float uStretch;
 uniform float uTrail;
 uniform float uJet;
@@ -70,8 +72,12 @@ vec2 field(vec3 dir) {
 
   float loose = 1.0 - uCompact * 0.55;
 
+  // The lobes it was born with, flat at the poles so they never pinch.
+  float lobed = uLobeDepth * cos(uLobes * atan(dir.z, dir.x)) * (1.0 - dir.y * dir.y);
+
   float disp =
       carry
+    + lobed
     + uSwell * (0.105 + 0.06 * uAgitation) * swell * loose
     + 0.05 * ripple * (0.5 + uAgitation) * loose
     + 0.017 * grain * (0.6 + 0.8 * uAgitation)

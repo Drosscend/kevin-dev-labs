@@ -10,6 +10,7 @@ import {
   SphereGeometry,
   type Texture,
   Vector3,
+  Vector4,
 } from "three";
 import type { MoodProfile } from "./mind";
 import coreFrag from "./shaders/core.frag.glsl?raw";
@@ -19,6 +20,7 @@ import haloVert from "./shaders/halo.vert.glsl?raw";
 import noise from "./shaders/noise.glsl?raw";
 import orbFrag from "./shaders/orb.frag.glsl?raw";
 import orbVert from "./shaders/orb.vert.glsl?raw";
+import type { Traits } from "./traits";
 
 const withNoise = (source: string) => `${noise}\n${source}`;
 
@@ -66,7 +68,7 @@ export class Body {
   private elongation = 0;
   private trail = 0;
 
-  constructor() {
+  constructor(private readonly traits: Traits) {
     const skinMaterial = new ShaderMaterial({
       vertexShader: withNoise(orbVert),
       fragmentShader: withNoise(orbFrag),
@@ -89,6 +91,10 @@ export class Body {
         uTrail: { value: 0 },
         uJet: { value: 0 },
         uCompact: { value: 0 },
+        uDensity: { value: traits.density },
+        uLobes: { value: traits.lobes },
+        uLobeDepth: { value: traits.lobes > 0 ? traits.lobeDepth : 0 },
+        uMarks: { value: Array.from({ length: 6 }, () => new Vector4()) },
         uTrace: { value: null },
         uDeep: { value: new Color() },
         uSkin: { value: new Color() },
@@ -141,7 +147,19 @@ export class Body {
 
   /** A narrow window leaves it no room to swim sideways, so it comes out smaller. */
   resize(aspect: number): void {
-    this.size = SIZE * Math.min(Math.max(aspect / 1.2, 0.5), 1);
+    this.size = SIZE * this.traits.size * Math.min(Math.max(aspect / 1.2, 0.5), 1);
+  }
+
+  /** The mark it was born with, then whatever the visitor has left on it. */
+  remember(marks: readonly (readonly number[])[]): void {
+    const slots = (this.skin.material as ShaderMaterial).uniforms.uMarks.value as Vector4[];
+    const [x, y, z] = this.traits.birthmark;
+    slots[0].set(x, y, z, 0.42);
+    for (let i = 1; i < slots.length; i++) {
+      const mark = marks[i - 1];
+      if (mark) slots[i].set(mark[0], mark[1], mark[2], mark[3] * 0.8);
+      else slots[i].set(0, 0, 0, 0);
+    }
   }
 
   /** Turns a world direction into the skin's own frame, which keeps turning. */
