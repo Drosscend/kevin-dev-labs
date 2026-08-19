@@ -36,9 +36,17 @@ Puis http://localhost:5180
   sauts. Curseur parti, elle continue de fixer le dernier point trois secondes, puis balaye
   au hasard pour le chercher. Curseur collé au centre trop longtemps : elle détourne le regard
   et se creuse.
-- **Toucher** : distinct du regard. La peau répond bien avant l'arrivée du curseur, dès qu'il
-  entre dans une zone qui déborde largement la silhouette, et d'autant plus fort qu'il approche ;
-  la réponse est pleine dès qu'il est sur l'orbe. Une bosse gaussienne suit le point visé et des
+- **Vitre** : elle est seulement suggérée. Ce qui traverse la paroi près du bord en ressort
+  dévié, un reflet de la pièce y traîne en diagonale, et sa respiration y dépose de la buée
+  quand elle vient s'y coller. Cette buée vit en espace écran, sur deux cibles en ping-pong :
+  elle s'étale, diffuse la lumière qui la traverse et met une demi-minute à se dissiper, donc
+  une trace reste là où elle a été soufflée même une fois la créature repartie. Un clic est un
+  coup sur la vitre : une onde part du point touché et traverse la paroi en moins d'une seconde.
+- **Toucher** : distinct du regard, et impossible tant qu'elle n'est pas remontée à la vitre.
+  Le contact est mis à l'échelle de sa distance au verre : nul au fond, plein contre la paroi.
+  À portée, la peau répond bien avant l'arrivée du curseur, dès qu'il entre dans une zone qui
+  déborde largement la silhouette, et d'autant plus fort qu'il approche ; la réponse est pleine
+  dès qu'il est sur elle. Une bosse gaussienne suit le point visé et des
   rides concentriques s'en éloignent. La chaleur, elle, ne se dépose qu'au contact réel : une
   carte en projection équirectangulaire, entretenue en ping-pong sur deux cibles de rendu, où le
   toucher dépose, diffuse et refroidit en quelques secondes. La marque reste sur le point où elle
@@ -72,7 +80,10 @@ Puis http://localhost:5180
   et demie. Hauteur et durée sont retirées au sort à chaque fois. Le tout dans une réverbération à réponse
   impulsionnelle générée. Le son démarre au premier mouvement de souris (règle d'autoplay des
   navigateurs) et se coupe quand l'onglet passe en arrière-plan.
-- **Post-traitement** : bloom, aberration chromatique radiale, vignette et grain.
+- **Tactile** : sans survol, un doigt posé vaut présence, un tap bref et immobile vaut coup sur
+  la vitre, un doigt qui glisse vaut contact. Sur un écran étroit elle naît plus petite, sans
+  quoi la largeur du volume ne lui laisserait pas de quoi nager.
+- **Post-traitement** : bloom, vitre, aberration chromatique radiale, vignette et grain.
 
 ## Structure
 
@@ -86,6 +97,7 @@ Puis http://localhost:5180
 - `src/impulses.ts` : gestes spontanés et leurs enveloppes
 - `src/body.ts` : membrane, cœur interne, halo, déformation de la silhouette
 - `src/trace.ts` : carte de chaleur laissée par le toucher
+- `src/mist.ts` : buée déposée sur la vitre
 - `src/ambience.ts` : synthèse sonore
-- `src/post.ts` : chaîne de post-traitement
+- `src/post.ts` : chaîne de post-traitement, vitre comprise
 - `src/shaders/` : GLSL (le bruit simplex vient d'Ashima Arts, sous licence MIT)

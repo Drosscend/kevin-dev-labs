@@ -16,6 +16,7 @@ import { Gaze } from "./gaze";
 import { Urges } from "./impulses";
 import { Locomotion } from "./locomotion";
 import { Mind, MOOD_LABELS } from "./mind";
+import { Mist } from "./mist";
 import { createPost } from "./post";
 import { Presence } from "./presence";
 import { Trace } from "./trace";
@@ -49,6 +50,7 @@ camera.position.set(0, 0, 3.9);
 camera.lookAt(0, 0, 0);
 
 const body = new Body();
+body.resize(camera.aspect);
 scene.add(body.group);
 
 const post = createPost(renderer, scene, camera);
@@ -61,6 +63,7 @@ const vitals = new Vitals();
 const locomotion = new Locomotion();
 const ambience = new Ambience();
 const trace = new Trace();
+const mist = new Mist();
 
 const raycaster = new Raycaster();
 const bounds = new Sphere(new Vector3(), 1);
@@ -68,6 +71,7 @@ const hitPoint = new Vector3();
 const lookDir = new Vector3(0, 0, 1);
 const touchDir = new Vector3(0, 0, 1);
 const localTouch = new Vector3(0, 0, 1);
+const onScreen = new Vector3();
 const span = new Vector2();
 
 let spike = 0;
@@ -77,9 +81,15 @@ let dwell = 0;
 let shy = 0;
 let greeted = false;
 let lastReadout = 0;
+let knockAge = -1;
+let knockX = 0.5;
+let knockY = 0.5;
 
 const ease = (dt: number, rate: number) => 1 - Math.exp(-rate * dt);
 const clamp01 = (value: number) => MathUtils.clamp(value, 0, 1);
+/** How much of it is within reach of the pane, and so of the visitor. */
+const atGlass = (z: number, radius: number) =>
+  clamp01((z - (vivarium.glass - radius * 2.6)) / (radius * 1.3));
 
 presence.listen(() => ambience.wake());
 
@@ -87,6 +97,7 @@ window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   vivarium.measure();
+  body.resize(camera.aspect);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.resize(window.innerWidth, window.innerHeight);
@@ -94,9 +105,6 @@ window.addEventListener("resize", () => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) ambience.suspend();
   else ambience.wake();
-});
-window.addEventListener("pointerdown", () => {
-  spike = 0.65;
 });
 
 const timer = new Timer();
@@ -111,6 +119,14 @@ renderer.setAnimationLoop((timestamp: number) => {
     greeted = true;
     hint.dataset.seen = "true";
   }
+  if (presence.knocked) {
+    spike = 0.65;
+    knockAge = 0;
+    knockX = presence.ndc.x * 0.5 + 0.5;
+    knockY = presence.ndc.y * 0.5 + 0.5;
+  } else if (knockAge >= 0) {
+    knockAge = knockAge > 1.6 ? -1 : knockAge + dt;
+  }
 
   // Where the visitor's hand falls on the creature, wherever the creature happens to be.
   const radius = body.radius;
@@ -124,11 +140,13 @@ renderer.setAnimationLoop((timestamp: number) => {
   if (lookDir.lengthSq() > 1e-6) lookDir.normalize();
   touchDir.copy(lookDir);
 
+  // Nothing of the hand reaches it unless it has come up to the pane itself.
+  const reachable = atGlass(locomotion.position.z, radius);
   const near = clamp01(1 - reach / (radius * 2.6));
   // The skin answers well before the hand arrives, then answers fully once it lands.
-  const felt = presence.gone ? 0 : clamp01((radius * 3 - reach) / (radius * 2));
+  const felt = presence.gone ? 0 : clamp01((radius * 3 - reach) / (radius * 2)) * reachable;
   touch += (felt - touch) * ease(dt, felt > touch ? 6 : 2.6);
-  const pressing = landed && !presence.gone ? 1 : 0;
+  const pressing = landed && !presence.gone ? reachable : 0;
   press += (pressing - press) * ease(dt, pressing > press ? 8 : 3);
 
   dwell = press > 0.5 && near > 0.82 ? dwell + dt : Math.max(0, dwell - dt * 1.6);
@@ -141,7 +159,7 @@ renderer.setAnimationLoop((timestamp: number) => {
     idleTime: presence.idle,
     knocked: presence.knocked,
     touch,
-    crowded: near,
+    crowded: near * (0.35 + reachable * 0.65),
     gone: presence.gone,
   });
   const mood = mind.felt;
@@ -171,6 +189,17 @@ renderer.setAnimationLoop((timestamp: number) => {
 
   spike -= spike * ease(dt, 3.4);
   const startle = spike + urge.jolt * 0.5;
+
+  // Breath only reaches the pane from right up against it, and stays where it was laid.
+  onScreen.copy(locomotion.position).project(camera);
+  mist.update(
+    renderer,
+    dt,
+    onScreen.x * 0.5 + 0.5,
+    onScreen.y * 0.5 + 0.5,
+    atGlass(locomotion.position.z, radius) * (0.2 + clamp01(vitals.wave) * 0.35),
+    camera.aspect,
+  );
 
   body.localize(touchDir, localTouch);
   trace.update(renderer, dt, localTouch, press * 0.55, 0.21);
@@ -213,6 +242,13 @@ renderer.setAnimationLoop((timestamp: number) => {
     familiarity: mind.familiarity,
   });
 
+  post.setGlass({
+    mist: mist.texture,
+    knockX,
+    knockY,
+    knockAge,
+    aspect: camera.aspect,
+  });
   post.setBloom(mood.bloom * (1 + vitals.pulse * 0.07) + startle * 0.12);
   post.setGrade(time, (vitals.pulse + startle) * 0.3, 0.3 + mood.agitation * 0.55);
   post.composer.render();

@@ -60,6 +60,7 @@ export class Body {
   private readonly localGaze = new Vector3(0, 0, 1);
   private readonly localFlow = new Vector3(0, 0, 1);
   private readonly inverseSpin = new Quaternion();
+  private size = SIZE;
   private elongation = 0;
   private trail = 0;
 
@@ -136,6 +137,11 @@ export class Body {
     this.group.add(this.core, this.skin, this.halo);
   }
 
+  /** A narrow window leaves it no room to swim sideways, so it comes out smaller. */
+  resize(aspect: number): void {
+    this.size = SIZE * Math.min(Math.max(aspect / 1.2, 0.5), 1);
+  }
+
   /** Turns a world direction into the skin's own frame, which keeps turning. */
   localize(world: Vector3, out: Vector3): Vector3 {
     this.inverseSpin.copy(this.group.quaternion).invert();
@@ -201,7 +207,10 @@ export class Body {
     (halo.uniforms.uColor.value as Color).copy(mood.skin);
 
     const breathing =
-      SIZE * mood.scale * (1 + state.breath * 0.35 + state.spike * 0.06) * (1 - state.hidden * 0.1);
+      this.size *
+      mood.scale *
+      (1 + state.breath * 0.35 + state.spike * 0.06) *
+      (1 - state.hidden * 0.1);
     const lengthen = 1 + state.stretch * 0.085;
     const narrow = 1 - state.stretch * 0.045;
     this.group.scale.set(breathing * narrow, breathing * lengthen, breathing * narrow);
