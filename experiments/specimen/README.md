@@ -1,7 +1,7 @@
 # Spécimen
 
 Prototype Three.js : une créature enfermée dans le champ d'une caméra fixe, qui y nage,
-s'approche, se cache, respire, bat, regarde et se distrait toute seule. Rien n'est
+s'approche, se cache, gonfle, décharge, regarde et se distrait toute seule. Rien n'est
 préenregistré, tout est calculé image par image.
 
 ## Lancer
@@ -51,33 +51,37 @@ Puis http://localhost:5180
   carte en projection équirectangulaire, entretenue en ping-pong sur deux cibles de rendu, où le
   toucher dépose, diffuse et refroidit en quelques secondes. La marque reste sur le point où elle
   a été faite et tourne avec la peau.
-- **Cœur** : deux battements par cycle (lub-dub) partant d'un pôle et se propageant en anneau.
-  Le rythme suit l'humeur (30 à 140 bpm), accélère à l'inspiration et ralentit à l'expiration
-  (arythmie sinusale), dérive en permanence de quelques pour cent, et lâche de loin en loin un
-  battement anticipé suivi d'une pause compensatoire.
+- **Impulsions** : quelque chose la traverse, sans rythme auquel se raccrocher. Une à cinq
+  impulsions se serrent en une fraction de seconde, puis plus rien pendant deux à vingt
+  secondes ; la durée du silence est tirée au carré d'un hasard, donc les longues attentes sont
+  rares mais possibles. Chacune part d'un pôle et se propage en anneau sous la peau. Mesuré sur
+  une minute : quatorze impulsions endormie, cinquante et une curieuse, cent trente-cinq
+  surprise, et jamais deux intervalles identiques.
 - **Respiration** : inspiration rapide sur un tiers du cycle, expiration lente, courte pause en
   bas. Rien d'une sinusoïde.
-- **Gestes spontanés** : sans rien demander, elle soupire, frissonne, s'étire, bâille ou
-  sursaute. Chaque geste pousse la respiration, la peau et la voix ensemble, sur une enveloppe
-  qui lui est propre. Le répertoire et la cadence dépendent de l'humeur : de l'ordre d'un geste
-  toutes les vingt secondes quand elle joue, toutes les minutes quand elle dort, avec une forte
-  part de hasard sur l'attente. Le même geste ne revient jamais deux fois de suite.
+- **Gestes spontanés** : sans rien demander, elle décharge, se contracte puis se relâche
+  lentement, s'embrase, part à la dérive, ou s'arrête net cinq secondes durant. Chaque geste
+  pousse ensemble la lumière, la forme et la nage, sur une enveloppe qui lui est propre. Le
+  répertoire et la cadence dépendent de l'humeur : de l'ordre d'un geste toutes les vingt
+  secondes quand elle joue, toutes les minutes quand elle dort, avec une forte part de hasard
+  sur l'attente. Le même geste ne revient jamais deux fois de suite.
 - **Familiarité** : la présence et le contact la font monter en une trentaine de secondes, elle
-  retombe en deux ou trois minutes d'absence. Une orbe qui vous connaît sursaute moins fort,
+  retombe en deux ou trois minutes d'absence. Une créature qui vous connaît sursaute moins fort,
   joue plus vite, veille plus longtemps et prend une teinte plus chaude. Ignorée, elle s'ennuie,
   et l'ennui accélère ses gestes. Rien n'est conservé d'une visite à l'autre.
-- **Humeurs** : `endormie`, `au repos`, `curieuse`, `joueuse`, `surprise`. Décidées par
-  l'inactivité, la vitesse du curseur, sa proximité et les clics, avec des seuils qui glissent
-  selon la familiarité. Chaque humeur porte sa palette, son rythme cardiaque, son agitation, son
-  bloom ; tout est interpolé en continu, jamais commuté d'un coup.
-- **Son** : entièrement synthétisé en Web Audio, sans aucun fichier. Une nappe grave accordée sur
-  l'humeur, un souffle dont le filtre s'ouvre vite à l'inspiration et retombe lentement à
-  l'expiration, un frottement audible quand le curseur glisse sur la peau, un coup sourd par
-  battement, un balayage bref au sursaut. Certains gestes ont une voix : un timbre poussé à travers
-  deux formants mobiles, avec sa part de souffle, ce qui suffit à l'oreille pour entendre un
-  animal sans qu'aucun mot soit prononcé. Un soupir ou un bâillement s'entend presque toujours,
-  un frisson ou un tic rarement, et deux voix ne peuvent pas se suivre à moins de deux secondes
-  et demie. Hauteur et durée sont retirées au sort à chaque fois. Le tout dans une réverbération à réponse
+- **Humeurs** : cinq états, jamais nommés à l'écran, jamais écrits nulle part pour le visiteur.
+  Décidés par l'inactivité, la vitesse du curseur, sa proximité et les coups sur la vitre, avec
+  des seuils qui glissent selon la familiarité. Chaque humeur porte sa palette, sa profondeur de
+  prédilection, sa cadence d'impulsions, son agitation, son bloom ; tout est interpolé en
+  continu, jamais commuté d'un coup.
+- **Son** : entièrement synthétisé en Web Audio, sans aucun fichier et sans aucune voix. Tout ce
+  qu'elle produit traverse la vitre : un passe-bas s'ouvre de 300 Hz à 4,6 kHz selon sa distance
+  au verre, donc on ne l'entend franchement que collée à la paroi. Une nappe grave accordée sur
+  l'humeur, un souffle dont le filtre s'ouvre vite au gonflement et retombe lentement, un
+  frottement quand le curseur glisse sur la peau, un craquement à chaque impulsion, un balayage
+  bref au sursaut, une bande qui s'ouvre vers l'aigu quand elle s'embrase. Le coup sur la vitre
+  est le seul son de votre côté du verre, et le seul qui ne passe par aucun filtre. La
+  spatialisation suit sa position dans le volume. Le tout dans une réverbération à réponse
   impulsionnelle générée. Le son démarre au premier mouvement de souris (règle d'autoplay des
   navigateurs) et se coupe quand l'onglet passe en arrière-plan.
 - **Tactile** : sans survol, un doigt posé vaut présence, un tap bref et immobile vaut coup sur
@@ -92,10 +96,10 @@ Puis http://localhost:5180
 - `src/presence.ts` : le visiteur vu de l'intérieur, sa place, sa vitesse, ses coups
 - `src/mind.ts` : profils d'humeur, machine à états, familiarité, curiosité et peur
 - `src/locomotion.ts` : nage par à-coups, cap, fuite, dépôt au fond
-- `src/vitals.ts` : respiration et cœur
+- `src/vitals.ts` : gonflement et impulsions
 - `src/gaze.ts` : saccades, fixation, rémanence, errance
 - `src/impulses.ts` : gestes spontanés et leurs enveloppes
-- `src/body.ts` : membrane, cœur interne, halo, déformation de la silhouette
+- `src/body.ts` : membrane, lueur interne, halo, déformation de la silhouette
 - `src/trace.ts` : carte de chaleur laissée par le toucher
 - `src/mist.ts` : buée déposée sur la vitre
 - `src/ambience.ts` : synthèse sonore

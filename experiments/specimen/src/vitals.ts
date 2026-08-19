@@ -1,6 +1,7 @@
 import type { MoodProfile } from "./mind";
 
 const TAU = Math.PI * 2;
+const LIVE = 4;
 
 /** Air goes in quickly, comes out slowly, and rests a moment at the bottom. */
 function breathCurve(phase: number): number {
@@ -9,51 +10,59 @@ function breathCurve(phase: number): number {
   return Math.cos(((p - 0.34) / 0.66) ** 0.78 * Math.PI);
 }
 
-/** Breathing and the heart, neither of them a sine wave. */
+/**
+ * The slow swell, and whatever it is that beats inside. The beating has no rhythm to hold on
+ * to: a handful of impulses crowd together, then nothing for long enough to wonder whether it
+ * stopped. Never a rate, never twice the same interval.
+ */
 export class Vitals {
   /** How much the whole body swells, already scaled by the mood's breath depth. */
   breath = 0;
-  /** The raw breathing wave, from full out to full in. */
+  /** The raw swell wave, from full out to full in. */
   wave = 0;
   pulse = 0;
-  phase = 0;
-  bpm = 44;
-  beat = false;
+  /** Seconds since the last impulse, which the skin uses to send a ring around. */
+  phase = 9;
+  /** True for the single frame an impulse fires. */
+  fired = false;
 
   private breathPhase = 0;
-  private rush = 0;
-  private compensate = 0;
+  private readonly ages = new Float32Array(LIVE).fill(99);
+  private slot = 0;
+  private left = 0;
+  private next = 1.5;
 
-  update(dt: number, time: number, mood: MoodProfile, extraBreath: number): void {
+  update(dt: number, mood: MoodProfile, extraBreath: number): void {
     this.breathPhase += dt * mood.breathRate;
     this.wave = breathCurve(this.breathPhase);
     const tide = this.wave * 0.82 + Math.sin(this.breathPhase * TAU * 0.41 + 1.2) * 0.18;
     this.breath = (tide + extraBreath * 1.9) * mood.breathDepth;
 
-    // Sinus arrhythmia: the heart hurries on the way in and eases off on the way out.
-    const sway = Math.sin(time * 0.37) + Math.sin(time * 0.131 + 2.1);
-    this.bpm = mood.bpm * (1 + this.wave * 0.085 + sway * 0.018) * (this.compensate > 0 ? 0.72 : 1);
-
-    this.phase += (dt * this.bpm) / 60 + (this.rush > 0 ? dt * 1.7 : 0);
-    this.beat = false;
-    if (this.phase >= 1) {
-      this.phase -= 1;
-      this.beat = true;
-      if (this.rush > 0) {
-        this.rush = 0;
-        this.compensate = 0.9;
-      } else if (this.compensate > 0) {
-        this.compensate = 0;
-      } else if (Math.random() < 0.028) {
-        // Once in a while a beat comes early, and the next one waits for it.
-        this.rush = 0.9;
+    this.fired = false;
+    this.next -= dt;
+    if (this.next <= 0) {
+      this.fired = true;
+      this.ages[this.slot] = 0;
+      this.slot = (this.slot + 1) % LIVE;
+      if (this.left > 0) {
+        this.left -= 1;
+        this.next = 0.07 + Math.random() * 0.17;
+      } else {
+        // A run of one to five, then a silence with no length you could guess.
+        this.left = Math.random() < 0.45 ? 0 : 1 + Math.floor(Math.random() * 4);
+        this.next = (0.35 + Math.random() ** 2 * 5.5) / Math.max(mood.spark, 0.05);
       }
     }
-    this.rush = Math.max(0, this.rush - dt);
-    this.compensate = Math.max(0, this.compensate - dt);
 
-    const lub = Math.exp(-((this.phase * 9) ** 2));
-    const dub = 0.55 * Math.exp(-(((this.phase - 0.17) * 11) ** 2));
-    this.pulse = (lub + dub) * 0.72;
+    this.pulse = 0;
+    this.phase = 9;
+    for (let i = 0; i < LIVE; i++) {
+      const age = this.ages[i] + dt;
+      this.ages[i] = age;
+      if (age > 1.4) continue;
+      this.phase = Math.min(this.phase, age);
+      this.pulse += age < 0.05 ? age / 0.05 : Math.exp(-(age - 0.05) * 6.5);
+    }
+    this.pulse = Math.min(this.pulse, 1.6) * 0.72;
   }
 }

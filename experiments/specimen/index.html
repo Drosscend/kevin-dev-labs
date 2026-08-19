@@ -29,29 +29,6 @@
         width: 100%;
         height: 100%;
       }
-      .readout {
-        position: fixed;
-        bottom: 1.75rem;
-        left: 50%;
-        transform: translateX(-50%);
-        display: flex;
-        align-items: baseline;
-        gap: 0.75rem;
-        color: var(--ink);
-        font-size: 0.78rem;
-        letter-spacing: 0.22em;
-        text-transform: uppercase;
-        pointer-events: none;
-        user-select: none;
-      }
-      .readout b {
-        font-weight: 500;
-        transition: color 600ms ease;
-      }
-      .readout span {
-        opacity: 0.45;
-        font-variant-numeric: tabular-nums;
-      }
       .hint {
         position: fixed;
         top: 1.75rem;
@@ -72,11 +49,7 @@
   </head>
   <body>
     <canvas id="scene"></canvas>
-    <p class="hint" id="hint">Approchez, cliquez, laissez-la tranquille</p>
-    <p class="readout">
-      <b id="mood" aria-live="polite">au repos</b>
-      <span id="pulse">0 bpm</span>
-    </p>
+    <p class="hint" id="hint">Approchez, frappez la vitre, laissez-la tranquille</p>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

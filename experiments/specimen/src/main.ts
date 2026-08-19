@@ -15,7 +15,7 @@ import { Body } from "./body";
 import { Gaze } from "./gaze";
 import { Urges } from "./impulses";
 import { Locomotion } from "./locomotion";
-import { Mind, MOOD_LABELS } from "./mind";
+import { Mind } from "./mind";
 import { Mist } from "./mist";
 import { createPost } from "./post";
 import { Presence } from "./presence";
@@ -30,8 +30,6 @@ function required<T extends Element>(selector: string): T {
 }
 
 const canvas = required<HTMLCanvasElement>("#scene");
-const moodOut = required<HTMLElement>("#mood");
-const pulseOut = required<HTMLElement>("#pulse");
 const hint = required<HTMLElement>("#hint");
 
 const renderer = new WebGLRenderer({
@@ -80,7 +78,6 @@ let press = 0;
 let dwell = 0;
 let shy = 0;
 let greeted = false;
-let lastReadout = 0;
 let knockAge = -1;
 let knockX = 0.5;
 let knockY = 0.5;
@@ -174,7 +171,7 @@ renderer.setAnimationLoop((timestamp: number) => {
   urges.update(dt, mind.name, mind.boredom);
   const urge = urges.out;
 
-  vitals.update(dt, time, mood, urge.breath);
+  vitals.update(dt, mood, urge.breath);
 
   locomotion.update(dt, {
     vivarium,
@@ -185,6 +182,7 @@ renderer.setAnimationLoop((timestamp: number) => {
     curiosity: mind.curiosity,
     radius,
     knocked: presence.knocked,
+    still: urge.still,
   });
 
   spike -= spike * ease(dt, 3.4);
@@ -224,6 +222,7 @@ renderer.setAnimationLoop((timestamp: number) => {
       speed: locomotion.speed,
       jet: locomotion.jet,
       hidden: locomotion.hidden,
+      flare: urge.flare,
     },
     mood,
     dt,
@@ -234,10 +233,11 @@ renderer.setAnimationLoop((timestamp: number) => {
     mood: mind.name,
     breath: vitals.wave,
     agitation: mood.agitation,
-    beat: vitals.beat,
+    fired: vitals.fired,
     pan: MathUtils.clamp(locomotion.position.x / Math.max(span.x, 0.001), -1, 1),
-    flinched: presence.knocked,
-    gesture: urge.voice,
+    atGlass: reachable,
+    knocked: presence.knocked,
+    gesture: urge.sounded,
     rub: press * Math.min(1, presence.speed * 0.45),
     familiarity: mind.familiarity,
   });
@@ -252,11 +252,4 @@ renderer.setAnimationLoop((timestamp: number) => {
   post.setBloom(mood.bloom * (1 + vitals.pulse * 0.07) + startle * 0.12);
   post.setGrade(time, (vitals.pulse + startle) * 0.3, 0.3 + mood.agitation * 0.55);
   post.composer.render();
-
-  if (time - lastReadout > 0.3) {
-    lastReadout = time;
-    moodOut.textContent = MOOD_LABELS[mind.name];
-    moodOut.style.color = `#${mood.skin.getHexString()}`;
-    pulseOut.textContent = `${Math.round(vitals.bpm)} bpm`;
-  }
 });

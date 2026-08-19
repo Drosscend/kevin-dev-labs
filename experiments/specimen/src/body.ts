@@ -45,6 +45,8 @@ export interface BodyState {
   speed: number;
   jet: number;
   hidden: number;
+  /** A surge or a withdrawal of light, which is most of what it has to say. */
+  flare: number;
 }
 
 /** The creature itself: a membrane, the glow trapped inside it, and the aura it leaks. */
@@ -163,7 +165,7 @@ export class Body {
     this.elongation += (drawn - this.elongation) * (1 - Math.exp(-3.2 * dt));
     this.trail += (drawn * 0.85 - this.trail) * (1 - Math.exp(-1.7 * dt));
 
-    const dimmed = 1 - state.hidden * 0.45;
+    const dimmed = Math.max(0.3, (1 - state.hidden * 0.45) * (1 + state.flare * 0.9));
 
     const skin = this.skin.material as ShaderMaterial;
     skin.uniforms.uTime.value = state.time;

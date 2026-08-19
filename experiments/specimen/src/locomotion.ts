@@ -12,6 +12,8 @@ export interface Swim {
   curiosity: number;
   radius: number;
   knocked: boolean;
+  /** How much it is holding its own movement back, 0 to 1. */
+  still: number;
 }
 
 const ease = (dt: number, rate: number) => 1 - Math.exp(-rate * dt);
@@ -96,7 +98,7 @@ export class Locomotion {
     const gap = this.course.length();
     if (!this.pushed && this.phase >= 0.34) {
       this.pushed = true;
-      if (this.frozen <= 0 && gap > 0.03) {
+      if (this.frozen <= 0 && gap > 0.03 && swim.still < 0.5) {
         const urge = MathUtils.clamp(gap / 0.7, 0.15, 1);
         this.velocity.addScaledVector(this.course, (mood.vigor * urge * 0.9) / gap);
       }
@@ -104,7 +106,7 @@ export class Locomotion {
 
     // Something too tired to swim slowly comes to rest on the bottom.
     this.velocity.y -= mood.sink * 0.35 * dt;
-    this.velocity.multiplyScalar(Math.exp(-(this.frozen > 0 ? 7 : 1.9) * dt));
+    this.velocity.multiplyScalar(Math.exp(-(this.frozen > 0 ? 7 : 1.9 + swim.still * 4) * dt));
     this.position.addScaledVector(this.velocity, dt);
     vivarium.contain(this.position, this.velocity, radius);
 

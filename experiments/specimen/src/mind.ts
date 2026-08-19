@@ -10,7 +10,8 @@ export interface MoodProfile {
   swell: number;
   breathRate: number;
   breathDepth: number;
-  bpm: number;
+  /** Roughly how many times a second something fires inside. */
+  spark: number;
   glow: number;
   bloom: number;
   halo: number;
@@ -28,14 +29,6 @@ export interface MoodProfile {
   sink: number;
 }
 
-export const MOOD_LABELS: Record<MoodName, string> = {
-  resting: "au repos",
-  curious: "curieuse",
-  playful: "joueuse",
-  startled: "surprise",
-  dreaming: "endormie",
-};
-
 const PROFILES: Record<MoodName, MoodProfile> = {
   resting: {
     deep: new Color(0x0a2540),
@@ -45,7 +38,7 @@ const PROFILES: Record<MoodName, MoodProfile> = {
     swell: 1.0,
     breathRate: 0.11,
     breathDepth: 0.036,
-    bpm: 44,
+    spark: 0.5,
     glow: 0.4,
     bloom: 0.55,
     halo: 0.6,
@@ -65,7 +58,7 @@ const PROFILES: Record<MoodName, MoodProfile> = {
     swell: 1.1,
     breathRate: 0.17,
     breathDepth: 0.03,
-    bpm: 64,
+    spark: 0.9,
     glow: 0.5,
     bloom: 0.62,
     halo: 0.7,
@@ -85,7 +78,7 @@ const PROFILES: Record<MoodName, MoodProfile> = {
     swell: 1.25,
     breathRate: 0.26,
     breathDepth: 0.026,
-    bpm: 94,
+    spark: 1.6,
     glow: 0.62,
     bloom: 0.7,
     halo: 0.8,
@@ -105,7 +98,7 @@ const PROFILES: Record<MoodName, MoodProfile> = {
     swell: 0.9,
     breathRate: 0.4,
     breathDepth: 0.02,
-    bpm: 140,
+    spark: 2.6,
     glow: 0.7,
     bloom: 0.78,
     halo: 0.95,
@@ -125,7 +118,7 @@ const PROFILES: Record<MoodName, MoodProfile> = {
     swell: 0.8,
     breathRate: 0.055,
     breathDepth: 0.05,
-    bpm: 30,
+    spark: 0.25,
     glow: 0.28,
     bloom: 0.55,
     halo: 0.45,
@@ -227,7 +220,7 @@ export class Mind {
     this.felt.swell = approach(this.felt.swell, target.swell, rate, dt);
     this.felt.breathRate = approach(this.felt.breathRate, target.breathRate, rate, dt);
     this.felt.breathDepth = approach(this.felt.breathDepth, target.breathDepth, rate, dt);
-    this.felt.bpm = approach(this.felt.bpm, target.bpm, rate * 1.4, dt);
+    this.felt.spark = approach(this.felt.spark, target.spark, rate * 1.4, dt);
     this.felt.glow = approach(this.felt.glow, target.glow, rate, dt);
     this.felt.bloom = approach(this.felt.bloom, target.bloom, rate, dt);
     this.felt.halo = approach(this.felt.halo, target.halo, rate, dt);
