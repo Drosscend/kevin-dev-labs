@@ -16,6 +16,16 @@ export interface MoodProfile {
   halo: number;
   scale: number;
   spin: number;
+  /** Where in the tank it would rather be: 0 against the glass, 1 lost in the back. */
+  depth: number;
+  /** Thrusts per second. */
+  pace: number;
+  /** How hard each thrust pushes. */
+  vigor: number;
+  /** How far it lets itself drift sideways from where it was heading. */
+  roam: number;
+  /** How much it lets itself settle towards the floor. */
+  sink: number;
 }
 
 export const MOOD_LABELS: Record<MoodName, string> = {
@@ -41,6 +51,11 @@ const PROFILES: Record<MoodName, MoodProfile> = {
     halo: 0.6,
     scale: 1.0,
     spin: 0.05,
+    depth: 0.55,
+    pace: 0.34,
+    vigor: 0.9,
+    roam: 0.5,
+    sink: 0.06,
   },
   curious: {
     deep: new Color(0x123a4f),
@@ -56,6 +71,11 @@ const PROFILES: Record<MoodName, MoodProfile> = {
     halo: 0.7,
     scale: 1.03,
     spin: 0.09,
+    depth: 0.08,
+    pace: 0.75,
+    vigor: 1.35,
+    roam: 0.7,
+    sink: 0,
   },
   playful: {
     deep: new Color(0x3a1148),
@@ -71,6 +91,11 @@ const PROFILES: Record<MoodName, MoodProfile> = {
     halo: 0.8,
     scale: 1.06,
     spin: 0.16,
+    depth: 0.05,
+    pace: 1.5,
+    vigor: 2.1,
+    roam: 1.2,
+    sink: 0,
   },
   startled: {
     deep: new Color(0x400a18),
@@ -86,6 +111,11 @@ const PROFILES: Record<MoodName, MoodProfile> = {
     halo: 0.95,
     scale: 0.94,
     spin: 0.28,
+    depth: 0.95,
+    pace: 1.9,
+    vigor: 2.7,
+    roam: 0.9,
+    sink: 0,
   },
   dreaming: {
     deep: new Color(0x070b22),
@@ -101,6 +131,11 @@ const PROFILES: Record<MoodName, MoodProfile> = {
     halo: 0.45,
     scale: 0.95,
     spin: 0.02,
+    depth: 0.88,
+    pace: 0.12,
+    vigor: 0.5,
+    roam: 0.16,
+    sink: 0.55,
   },
 };
 
@@ -108,8 +143,11 @@ export interface Senses {
   pointerSpeed: number;
   pointerNear: number;
   idleTime: number;
-  poked: boolean;
+  knocked: boolean;
   touch: number;
+  /** How close the visitor's hand is to the creature itself, 0 to 1. */
+  crowded: number;
+  gone: boolean;
 }
 
 const WARM = new Color(0xffb27a);
@@ -137,6 +175,10 @@ export class Mind {
   familiarity = 0;
   /** How badly it wants something to happen. Only builds once it knows the visitor. */
   boredom = 0;
+  /** Wants to come closer. */
+  curiosity = 0;
+  /** Wants to be somewhere else. */
+  fear = 0;
 
   private energy = 0;
   private startle = 0;
@@ -149,14 +191,16 @@ export class Mind {
     this.energy = Math.max(0, Math.min(this.energy, 6));
 
     const engaged = clamp01(
-      senses.touch * 0.9 + Math.min(senses.pointerSpeed, 5) * 0.14 + (senses.poked ? 1 : 0),
+      senses.touch * 0.9 + Math.min(senses.pointerSpeed, 5) * 0.14 + (senses.knocked ? 1 : 0),
     );
     this.familiarity = clamp01(this.familiarity + (engaged - this.familiarity * 0.35) * dt * 0.05);
     const ignored = senses.idleTime > 6 ? this.familiarity : 0;
     this.boredom += (ignored - this.boredom) * (1 - Math.exp(-0.07 * dt));
 
-    // A creature that knows you stops jumping at every poke.
-    if (senses.poked) this.startle = (1.4 + Math.random() * 0.9) * (1 - this.familiarity * 0.55);
+    this.drives(dt, senses);
+
+    // A creature that knows you stops jumping at every knock.
+    if (senses.knocked) this.startle = (1.4 + Math.random() * 0.9) * (1 - this.familiarity * 0.55);
     this.startle = Math.max(0, this.startle - dt);
     this.held += dt;
 
@@ -189,10 +233,36 @@ export class Mind {
     this.felt.halo = approach(this.felt.halo, target.halo, rate, dt);
     this.felt.scale = approach(this.felt.scale, target.scale, rate, dt);
     this.felt.spin = approach(this.felt.spin, target.spin, rate, dt);
+    this.felt.depth = approach(this.felt.depth, target.depth, rate * 0.7, dt);
+    this.felt.pace = approach(this.felt.pace, target.pace, rate, dt);
+    this.felt.vigor = approach(this.felt.vigor, target.vigor, rate, dt);
+    this.felt.roam = approach(this.felt.roam, target.roam, rate, dt);
+    this.felt.sink = approach(this.felt.sink, target.sink, rate * 0.6, dt);
+  }
+
+  /**
+   * Two wants pulling against each other. Being crowded feeds the fear, which sends it away;
+   * once away, the fear drains and the curiosity builds again. Nothing schedules the hesitation,
+   * it falls out of the two rates.
+   */
+  private drives(dt: number, senses: Senses): void {
+    const crowded = senses.crowded;
+    const rush = clamp01((senses.pointerSpeed - 2.5) / 5);
+    const shyness = 1 - this.familiarity * 0.45;
+    const pressed = clamp01(crowded * (0.55 + rush * 0.7)) * shyness;
+
+    if (senses.knocked) {
+      this.fear = Math.min(1, this.fear + (0.55 + Math.random() * 0.35) * shyness);
+    }
+    const climbing = pressed > this.fear;
+    this.fear = approach(this.fear, pressed, climbing ? 1.1 : 0.34, dt);
+
+    const invited = senses.gone ? 0.12 : clamp01(1 - crowded * 0.85) * (1 - this.fear * 0.9);
+    this.curiosity = approach(this.curiosity, invited, invited > this.curiosity ? 0.3 : 0.9, dt);
   }
 
   private decide(senses: Senses): MoodName {
-    if (this.startle > 0) return "startled";
+    if (this.startle > 0 || this.fear > 0.62) return "startled";
     if (senses.idleTime > 15 + this.familiarity * 12) return "dreaming";
     if (this.energy > 2.6 - this.familiarity * 1.2) return "playful";
     if (senses.idleTime < 2.5 + this.familiarity * 2 || senses.pointerNear > 0.5) return "curious";

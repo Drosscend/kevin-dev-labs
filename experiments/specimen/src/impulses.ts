@@ -1,4 +1,4 @@
-import type { MoodName } from "./moods";
+import type { MoodName } from "./mind";
 
 export type GestureKind = "sigh" | "yawn" | "shiver" | "stretch" | "twitch" | "chirp";
 

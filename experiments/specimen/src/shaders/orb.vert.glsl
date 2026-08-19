@@ -9,6 +9,11 @@ uniform float uShy;
 uniform float uShiver;
 uniform float uTouch;
 uniform vec3 uTouchDir;
+uniform vec3 uFlow;
+uniform float uStretch;
+uniform float uTrail;
+uniform float uJet;
+uniform float uCompact;
 uniform sampler2D uTrace;
 
 varying vec3 vWorldPos;
@@ -55,9 +60,20 @@ vec2 field(vec3 dir) {
   float bump = exp(-pow(reach * 3.2, 2.0));
   float rings = cos(reach * 10.0 - t * 2.4) * exp(-reach * 1.6);
 
+  // Drawn out along the way it travels, trailing behind, and squeezed while it gathers to push.
+  float along = dot(dir, uFlow);
+  float tail = max(0.0, -along);
+  float carry =
+      uStretch * (along * along - 0.34) * 0.5
+    + uTrail * tail * tail * tail * 0.42
+    - uJet * (1.0 - along * along) * 0.14;
+
+  float loose = 1.0 - uCompact * 0.55;
+
   float disp =
-      uSwell * (0.105 + 0.06 * uAgitation) * swell
-    + 0.05 * ripple * (0.5 + uAgitation)
+      carry
+    + uSwell * (0.105 + 0.06 * uAgitation) * swell * loose
+    + 0.05 * ripple * (0.5 + uAgitation) * loose
     + 0.017 * grain * (0.6 + 0.8 * uAgitation)
     + 0.012 * tremor * uAgitation
     + uShiver * 0.026 * snoise(dir * 15.0 + t * 26.0)

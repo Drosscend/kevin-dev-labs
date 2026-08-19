@@ -11,7 +11,7 @@ import {
   type Texture,
   Vector3,
 } from "three";
-import type { MoodProfile } from "./moods";
+import type { MoodProfile } from "./mind";
 import coreFrag from "./shaders/core.frag.glsl?raw";
 import coreVert from "./shaders/core.vert.glsl?raw";
 import haloFrag from "./shaders/halo.frag.glsl?raw";
@@ -22,7 +22,10 @@ import orbVert from "./shaders/orb.vert.glsl?raw";
 
 const withNoise = (source: string) => `${noise}\n${source}`;
 
-export interface Vitals {
+/** How big it is when it is neither swollen nor tucked in. */
+const SIZE = 0.62;
+
+export interface BodyState {
   time: number;
   breath: number;
   pulse: number;
@@ -36,18 +39,29 @@ export interface Vitals {
   gazeDir: Vector3;
   focus: number;
   traceMap: Texture;
+  position: Vector3;
+  /** Direction of travel, in world space. */
+  flow: Vector3;
+  speed: number;
+  jet: number;
+  hidden: number;
 }
 
-/** The orb itself: a membrane, the glow trapped inside it, and the aura it leaks. */
-export class Creature {
+/** The creature itself: a membrane, the glow trapped inside it, and the aura it leaks. */
+export class Body {
   readonly group = new Group();
+  /** Rough world radius, good enough to test whether the visitor's hand is on it. */
+  radius = SIZE;
 
   private readonly skin: Mesh;
   private readonly core: Mesh;
   private readonly halo: Mesh;
   private readonly localTouch = new Vector3(0, 0, 1);
   private readonly localGaze = new Vector3(0, 0, 1);
+  private readonly localFlow = new Vector3(0, 0, 1);
   private readonly inverseSpin = new Quaternion();
+  private elongation = 0;
+  private trail = 0;
 
   constructor() {
     const skinMaterial = new ShaderMaterial({
@@ -67,6 +81,11 @@ export class Creature {
         uShiver: { value: 0 },
         uTouch: { value: 0 },
         uTouchDir: { value: new Vector3(0, 0, 1) },
+        uFlow: { value: new Vector3(0, 0, 1) },
+        uStretch: { value: 0 },
+        uTrail: { value: 0 },
+        uJet: { value: 0 },
+        uCompact: { value: 0 },
         uTrace: { value: null },
         uDeep: { value: new Color() },
         uSkin: { value: new Color() },
@@ -123,53 +142,69 @@ export class Creature {
     return out.copy(world).applyQuaternion(this.inverseSpin);
   }
 
-  update(vitals: Vitals, mood: MoodProfile, dt: number): void {
+  update(state: BodyState, mood: MoodProfile, dt: number): void {
+    this.group.position.copy(state.position);
     this.group.rotation.y += dt * mood.spin;
-    this.group.rotation.x = Math.sin(vitals.time * 0.13) * 0.12;
+    this.group.rotation.x = Math.sin(state.time * 0.13) * 0.12;
 
     this.inverseSpin.copy(this.group.quaternion).invert();
-    this.localTouch.copy(vitals.touchDir).applyQuaternion(this.inverseSpin);
-    this.localGaze.copy(vitals.gazeDir).applyQuaternion(this.inverseSpin);
+    this.localTouch.copy(state.touchDir).applyQuaternion(this.inverseSpin);
+    this.localGaze.copy(state.gazeDir).applyQuaternion(this.inverseSpin);
+    this.localFlow.copy(state.flow).applyQuaternion(this.inverseSpin);
+
+    // The silhouette answers slower than the movement, and its tail slower still.
+    const drawn = Math.min(state.speed * 0.42, 0.55);
+    this.elongation += (drawn - this.elongation) * (1 - Math.exp(-3.2 * dt));
+    this.trail += (drawn * 0.85 - this.trail) * (1 - Math.exp(-1.7 * dt));
+
+    const dimmed = 1 - state.hidden * 0.45;
 
     const skin = this.skin.material as ShaderMaterial;
-    skin.uniforms.uTime.value = vitals.time;
-    skin.uniforms.uBreath.value = vitals.breath;
+    skin.uniforms.uTime.value = state.time;
+    skin.uniforms.uBreath.value = state.breath;
     skin.uniforms.uSwell.value = mood.swell;
     skin.uniforms.uAgitation.value = mood.agitation;
-    skin.uniforms.uPulse.value = vitals.pulse;
-    skin.uniforms.uPulsePhase.value = vitals.pulsePhase;
-    skin.uniforms.uSpike.value = vitals.spike;
-    skin.uniforms.uShy.value = vitals.shy;
-    skin.uniforms.uShiver.value = vitals.shiver;
-    skin.uniforms.uTouch.value = vitals.touch;
+    skin.uniforms.uPulse.value = state.pulse;
+    skin.uniforms.uPulsePhase.value = state.pulsePhase;
+    skin.uniforms.uSpike.value = state.spike;
+    skin.uniforms.uShy.value = state.shy;
+    skin.uniforms.uShiver.value = state.shiver;
+    skin.uniforms.uTouch.value = state.touch;
     (skin.uniforms.uTouchDir.value as Vector3).copy(this.localTouch);
-    skin.uniforms.uTrace.value = vitals.traceMap;
+    (skin.uniforms.uFlow.value as Vector3).copy(this.localFlow);
+    skin.uniforms.uStretch.value = this.elongation;
+    skin.uniforms.uTrail.value = this.trail;
+    skin.uniforms.uJet.value = state.jet;
+    skin.uniforms.uCompact.value = state.hidden;
+    skin.uniforms.uTrace.value = state.traceMap;
     (skin.uniforms.uDeep.value as Color).copy(mood.deep);
     (skin.uniforms.uSkin.value as Color).copy(mood.skin);
     (skin.uniforms.uVein.value as Color).copy(mood.vein);
-    skin.uniforms.uGlow.value = mood.glow;
+    skin.uniforms.uGlow.value = mood.glow * dimmed;
 
     const core = this.core.material as ShaderMaterial;
-    core.uniforms.uTime.value = vitals.time;
-    core.uniforms.uPulse.value = vitals.pulse + vitals.spike * 0.5;
-    core.uniforms.uGlow.value = mood.glow;
+    core.uniforms.uTime.value = state.time;
+    core.uniforms.uPulse.value = state.pulse + state.spike * 0.5;
+    core.uniforms.uGlow.value = mood.glow * dimmed;
     (core.uniforms.uColorA.value as Color).copy(mood.vein);
     (core.uniforms.uColorB.value as Color).copy(mood.skin);
     this.core.rotation.y -= dt * (0.25 + mood.agitation * 0.8);
 
-    // The inner glow leans toward whatever the orb is looking at: that lean reads as a pupil.
-    this.core.position.copy(this.localGaze).multiplyScalar(0.16 * vitals.focus);
-    this.core.scale.setScalar(1 + vitals.focus * 0.07 - vitals.spike * 0.22 + vitals.pulse * 0.03);
+    // The inner glow leans toward whatever it is looking at: that lean reads as a pupil.
+    this.core.position.copy(this.localGaze).multiplyScalar(0.16 * state.focus);
+    this.core.scale.setScalar(1 + state.focus * 0.07 - state.spike * 0.22 + state.pulse * 0.03);
 
     const halo = this.halo.material as ShaderMaterial;
-    halo.uniforms.uTime.value = vitals.time;
-    halo.uniforms.uBreath.value = vitals.breath;
-    halo.uniforms.uIntensity.value = mood.halo * (0.92 + vitals.pulse * 0.18);
+    halo.uniforms.uTime.value = state.time;
+    halo.uniforms.uBreath.value = state.breath;
+    halo.uniforms.uIntensity.value = mood.halo * dimmed * (0.92 + state.pulse * 0.18);
     (halo.uniforms.uColor.value as Color).copy(mood.skin);
 
-    const breathing = mood.scale * (1 + vitals.breath * 0.35 + vitals.spike * 0.06);
-    const lengthen = 1 + vitals.stretch * 0.085;
-    const narrow = 1 - vitals.stretch * 0.045;
+    const breathing =
+      SIZE * mood.scale * (1 + state.breath * 0.35 + state.spike * 0.06) * (1 - state.hidden * 0.1);
+    const lengthen = 1 + state.stretch * 0.085;
+    const narrow = 1 - state.stretch * 0.045;
     this.group.scale.set(breathing * narrow, breathing * lengthen, breathing * narrow);
+    this.radius = breathing * 1.15;
   }
 }

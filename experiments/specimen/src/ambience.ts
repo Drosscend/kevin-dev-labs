@@ -1,5 +1,5 @@
 import type { GestureKind } from "./impulses";
-import type { MoodName } from "./moods";
+import type { MoodName } from "./mind";
 
 interface Timbre {
   root: number;

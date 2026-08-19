@@ -1,5 +1,6 @@
 import {
   ACESFilmicToneMapping,
+  MathUtils,
   PerspectiveCamera,
   Raycaster,
   Scene,
@@ -10,14 +11,16 @@ import {
   WebGLRenderer,
 } from "three";
 import { Ambience } from "./ambience";
-import { Creature } from "./creature";
+import { Body } from "./body";
 import { Gaze } from "./gaze";
 import { Urges } from "./impulses";
-import { Mind, MOOD_LABELS } from "./moods";
+import { Locomotion } from "./locomotion";
+import { Mind, MOOD_LABELS } from "./mind";
 import { createPost } from "./post";
+import { Presence } from "./presence";
 import { Trace } from "./trace";
-
-const TAU = Math.PI * 2;
+import { Vitals } from "./vitals";
+import { Vivarium } from "./vivarium";
 
 function required<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -43,74 +46,47 @@ renderer.toneMappingExposure = 0.92;
 const scene = new Scene();
 const camera = new PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(0, 0, 3.9);
+camera.lookAt(0, 0, 0);
 
-const creature = new Creature();
-scene.add(creature.group);
+const body = new Body();
+scene.add(body.group);
 
 const post = createPost(renderer, scene, camera);
+const vivarium = new Vivarium(camera);
+const presence = new Presence();
 const mind = new Mind();
 const gaze = new Gaze();
 const urges = new Urges();
+const vitals = new Vitals();
+const locomotion = new Locomotion();
 const ambience = new Ambience();
 const trace = new Trace();
 
-const pointer = new Vector2(0, 0);
-const lastPointer = new Vector2(0, 0);
 const raycaster = new Raycaster();
-const orbBounds = new Sphere(new Vector3(0, 0, 0), 1);
+const bounds = new Sphere(new Vector3(), 1);
 const hitPoint = new Vector3();
 const lookDir = new Vector3(0, 0, 1);
 const touchDir = new Vector3(0, 0, 1);
 const localTouch = new Vector3(0, 0, 1);
+const span = new Vector2();
 
-let idleTime = 99;
-let poked = false;
-let pointerGone = true;
-let breathPhase = 0;
-let heartPhase = 0;
-let breath = 0;
-let pulse = 0;
 let spike = 0;
-let rush = 0;
-let compensate = 0;
 let touch = 0;
 let press = 0;
 let dwell = 0;
 let shy = 0;
+let greeted = false;
 let lastReadout = 0;
 
 const ease = (dt: number, rate: number) => 1 - Math.exp(-rate * dt);
+const clamp01 = (value: number) => MathUtils.clamp(value, 0, 1);
 
-/** Air goes in quickly, comes out slowly, and rests a moment at the bottom. */
-function breathCurve(phase: number): number {
-  const p = phase - Math.floor(phase);
-  if (p < 0.34) return -Math.cos((p / 0.34) * Math.PI);
-  return Math.cos(((p - 0.34) / 0.66) ** 0.78 * Math.PI);
-}
+presence.listen(() => ambience.wake());
 
-function noticePointer(event: PointerEvent): void {
-  pointer.set(
-    (event.clientX / window.innerWidth) * 2 - 1,
-    -(event.clientY / window.innerHeight) * 2 + 1,
-  );
-  idleTime = 0;
-  pointerGone = false;
-  hint.dataset.seen = "true";
-  ambience.wake();
-}
-
-window.addEventListener("pointermove", noticePointer);
-window.addEventListener("pointerdown", (event) => {
-  noticePointer(event);
-  poked = true;
-  spike = 0.65;
-});
-window.addEventListener("pointerout", (event) => {
-  if (!event.relatedTarget) pointerGone = true;
-});
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
+  vivarium.measure();
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.resize(window.innerWidth, window.innerHeight);
@@ -119,6 +95,9 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) ambience.suspend();
   else ambience.wake();
 });
+window.addEventListener("pointerdown", () => {
+  spike = 0.65;
+});
 
 const timer = new Timer();
 
@@ -126,37 +105,50 @@ renderer.setAnimationLoop((timestamp: number) => {
   timer.update(timestamp);
   const dt = Math.min(timer.getDelta(), 0.05);
   const time = timer.getElapsed();
-  idleTime += dt;
 
-  const pointerSpeed = Math.min(lastPointer.distanceTo(pointer) / Math.max(dt, 0.008), 10);
-  lastPointer.copy(pointer);
+  presence.update(dt);
+  if (!greeted && !presence.gone) {
+    greeted = true;
+    hint.dataset.seen = "true";
+  }
 
-  raycaster.setFromCamera(pointer, camera);
-  const reach = raycaster.ray.distanceToPoint(orbBounds.center);
-  const near = Math.max(0, Math.min(1, 1 - reach / 1.6));
-  const landed = raycaster.ray.intersectSphere(orbBounds, hitPoint) !== null;
-  if (!landed) raycaster.ray.closestPointToPoint(orbBounds.center, hitPoint);
-  if (hitPoint.lengthSq() > 0.0001) lookDir.copy(hitPoint).normalize();
+  // Where the visitor's hand falls on the creature, wherever the creature happens to be.
+  const radius = body.radius;
+  bounds.center.copy(locomotion.position);
+  bounds.radius = radius;
+  raycaster.setFromCamera(presence.ndc, camera);
+  const reach = raycaster.ray.distanceToPoint(bounds.center);
+  const landed = raycaster.ray.intersectSphere(bounds, hitPoint) !== null;
+  if (!landed) raycaster.ray.closestPointToPoint(bounds.center, hitPoint);
+  lookDir.subVectors(hitPoint, bounds.center);
+  if (lookDir.lengthSq() > 1e-6) lookDir.normalize();
   touchDir.copy(lookDir);
 
-  // The skin answers well before the pointer arrives, then answers fully once it lands.
-  const felt = pointerGone ? 0 : Math.max(0, Math.min(1, (1.9 - reach) / 0.9));
+  const near = clamp01(1 - reach / (radius * 2.6));
+  // The skin answers well before the hand arrives, then answers fully once it lands.
+  const felt = presence.gone ? 0 : clamp01((radius * 3 - reach) / (radius * 2));
   touch += (felt - touch) * ease(dt, felt > touch ? 6 : 2.6);
-  const pressing = landed && !pointerGone ? 1 : 0;
+  const pressing = landed && !presence.gone ? 1 : 0;
   press += (pressing - press) * ease(dt, pressing > press ? 8 : 3);
 
   dwell = press > 0.5 && near > 0.82 ? dwell + dt : Math.max(0, dwell - dt * 1.6);
-  const shyTarget = Math.min(1, Math.max(0, (dwell - 2.2) * 0.55));
+  const shyTarget = clamp01((dwell - 2.2) * 0.55);
   shy += (shyTarget - shy) * ease(dt, shyTarget > shy ? 1.9 : 1.1);
 
-  const flinched = poked;
-  mind.update(dt, { pointerSpeed, pointerNear: near, idleTime, poked, touch });
+  mind.update(dt, {
+    pointerSpeed: presence.speed,
+    pointerNear: near,
+    idleTime: presence.idle,
+    knocked: presence.knocked,
+    touch,
+    crowded: near,
+    gone: presence.gone,
+  });
   const mood = mind.felt;
-  poked = false;
 
   gaze.update(dt, {
     wanted: lookDir,
-    seen: idleTime < 2.2 && !pointerGone,
+    seen: presence.idle < 2.2 && !presence.gone,
     shy,
     agitation: mood.agitation,
   });
@@ -164,47 +156,31 @@ renderer.setAnimationLoop((timestamp: number) => {
   urges.update(dt, mind.name, mind.boredom);
   const urge = urges.out;
 
-  breathPhase += dt * mood.breathRate;
-  const breathWave = breathCurve(breathPhase);
-  const tide = breathWave * 0.82 + Math.sin(breathPhase * TAU * 0.41 + 1.2) * 0.18;
-  breath = (tide + urge.breath * 1.9) * mood.breathDepth;
+  vitals.update(dt, time, mood, urge.breath);
 
-  // Sinus arrhythmia: the heart hurries on the way in and eases off on the way out.
-  const sway = Math.sin(time * 0.37) + Math.sin(time * 0.131 + 2.1);
-  const bpm = mood.bpm * (1 + breathWave * 0.085 + sway * 0.018) * (compensate > 0 ? 0.72 : 1);
-  heartPhase += (dt * bpm) / 60 + (rush > 0 ? dt * 1.7 : 0);
-  let beat = false;
-  if (heartPhase >= 1) {
-    heartPhase -= 1;
-    beat = true;
-    if (rush > 0) {
-      rush = 0;
-      compensate = 0.9;
-    } else if (compensate > 0) {
-      compensate = 0;
-    } else if (Math.random() < 0.028) {
-      // Once in a while a beat comes early, and the next one waits for it.
-      rush = 0.9;
-    }
-  }
-  rush = Math.max(0, rush - dt);
-  compensate = Math.max(0, compensate - dt);
-  const lub = Math.exp(-((heartPhase * 9) ** 2));
-  const dub = 0.55 * Math.exp(-(((heartPhase - 0.17) * 11) ** 2));
-  pulse = (lub + dub) * 0.72;
+  locomotion.update(dt, {
+    vivarium,
+    handX: presence.ndc.x,
+    handY: presence.ndc.y,
+    mood,
+    fear: mind.fear,
+    curiosity: mind.curiosity,
+    radius,
+    knocked: presence.knocked,
+  });
 
   spike -= spike * ease(dt, 3.4);
   const startle = spike + urge.jolt * 0.5;
 
-  creature.localize(touchDir, localTouch);
+  body.localize(touchDir, localTouch);
   trace.update(renderer, dt, localTouch, press * 0.55, 0.21);
 
-  creature.update(
+  body.update(
     {
       time,
-      breath,
-      pulse,
-      pulsePhase: heartPhase,
+      breath: vitals.breath,
+      pulse: vitals.pulse,
+      pulsePhase: vitals.phase,
       spike: startle,
       shy,
       shiver: urge.shiver,
@@ -214,39 +190,37 @@ renderer.setAnimationLoop((timestamp: number) => {
       gazeDir: gaze.dir,
       focus: gaze.focus,
       traceMap: trace.texture,
+      position: locomotion.position,
+      flow: locomotion.flow,
+      speed: locomotion.speed,
+      jet: locomotion.jet,
+      hidden: locomotion.hidden,
     },
     mood,
     dt,
   );
 
+  vivarium.extent(locomotion.position.z, span);
   ambience.update({
     mood: mind.name,
-    breath: breathWave,
+    breath: vitals.wave,
     agitation: mood.agitation,
-    beat,
-    pan: pointer.x,
-    flinched,
+    beat: vitals.beat,
+    pan: MathUtils.clamp(locomotion.position.x / Math.max(span.x, 0.001), -1, 1),
+    flinched: presence.knocked,
     gesture: urge.voice,
-    rub: press * Math.min(1, pointerSpeed * 0.45),
+    rub: press * Math.min(1, presence.speed * 0.45),
     familiarity: mind.familiarity,
   });
 
-  const driftX = Math.sin(time * 0.11) * 0.18 + pointer.x * 0.45;
-  const driftY = Math.cos(time * 0.09) * 0.13 + pointer.y * 0.3;
-  camera.position.x += (driftX - camera.position.x) * ease(dt, 1.4);
-  camera.position.y += (driftY - camera.position.y) * ease(dt, 1.4);
-  camera.position.z +=
-    (3.9 + Math.sin(time * 0.07) * 0.14 + shy * 0.25 - camera.position.z) * ease(dt, 1.2);
-  camera.lookAt(0, 0, 0);
-
-  post.setBloom(mood.bloom * (1 + pulse * 0.07) + startle * 0.12);
-  post.setGrade(time, (pulse + startle) * 0.3, 0.3 + mood.agitation * 0.55);
+  post.setBloom(mood.bloom * (1 + vitals.pulse * 0.07) + startle * 0.12);
+  post.setGrade(time, (vitals.pulse + startle) * 0.3, 0.3 + mood.agitation * 0.55);
   post.composer.render();
 
   if (time - lastReadout > 0.3) {
     lastReadout = time;
     moodOut.textContent = MOOD_LABELS[mind.name];
     moodOut.style.color = `#${mood.skin.getHexString()}`;
-    pulseOut.textContent = `${Math.round(bpm)} bpm`;
+    pulseOut.textContent = `${Math.round(vitals.bpm)} bpm`;
   }
 });

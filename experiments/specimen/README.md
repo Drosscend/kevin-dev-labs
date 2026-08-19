@@ -1,8 +1,8 @@
 # Spécimen
 
-Prototype Three.js : une orbe qui respire, bat, regarde, se distrait toute seule et se
-souvient de vous le temps d'une visite. Rien n'est préenregistré, tout est calculé image
-par image.
+Prototype Three.js : une créature enfermée dans le champ d'une caméra fixe, qui y nage,
+s'approche, se cache, respire, bat, regarde et se distrait toute seule. Rien n'est
+préenregistré, tout est calculé image par image.
 
 ## Lancer
 
@@ -19,6 +19,17 @@ Puis http://localhost:5180
   couches de bruit simplex (houle lente domain-warpée, ondulations, grain fin, frisson haute
   fréquence). Les normales sont recalculées analytiquement, en échantillonnant le champ de
   déformation sur deux tangentes.
+- **Déplacement** : tout l'écran est son volume. Ses parois sont déduites du champ de la
+  caméra, qui ne bouge jamais, donc elle ne sort pas du cadre : elle peut monter jusqu'à
+  la vitre, où elle occupe la moitié de la hauteur, ou reculer au fond jusqu'à n'être
+  qu'une lueur. Elle n'avance pas en continu : elle se ramasse, pousse une fois, puis se
+  laisse porter. Le cap vient de deux envies contraires, la curiosité qui la ramène vers
+  le curseur et la peur qui l'en écarte ; l'hésitation n'est écrite nulle part, elle tombe
+  des deux constantes de temps. Un clic la fige un dixième de seconde avant qu'elle ne
+  détale. Endormie, elle coule et se pose au fond.
+- **Silhouette** : elle s'allonge dans le sens de la nage et traîne derrière elle, se
+  resserre à l'instant de pousser, et se referme sur elle-même à mesure qu'elle se cache.
+  La forme répond plus lentement que le mouvement, et sa traîne plus lentement encore.
 - **Regard** : la lueur interne se décale vers ce qu'elle fixe. L'œil ne suit pas en continu,
   il saute par saccades (durée proportionnelle à l'amplitude, léger dépassement à l'arrivée),
   tient sa fixation avec un micro-tremblement, et ne poursuit que très lentement entre deux
@@ -65,11 +76,15 @@ Puis http://localhost:5180
 
 ## Structure
 
-- `src/main.ts` : boucle, physiologie (respiration, cœur, contact), caméra
-- `src/moods.ts` : profils d'humeur, machine à états, familiarité et ennui
+- `src/main.ts` : boucle, câblage, contact du curseur
+- `src/vivarium.ts` : le volume, ses parois et son fond, déduits du champ de la caméra
+- `src/presence.ts` : le visiteur vu de l'intérieur, sa place, sa vitesse, ses coups
+- `src/mind.ts` : profils d'humeur, machine à états, familiarité, curiosité et peur
+- `src/locomotion.ts` : nage par à-coups, cap, fuite, dépôt au fond
+- `src/vitals.ts` : respiration et cœur
 - `src/gaze.ts` : saccades, fixation, rémanence, errance
 - `src/impulses.ts` : gestes spontanés et leurs enveloppes
-- `src/creature.ts` : membrane, cœur interne, halo
+- `src/body.ts` : membrane, cœur interne, halo, déformation de la silhouette
 - `src/trace.ts` : carte de chaleur laissée par le toucher
 - `src/ambience.ts` : synthèse sonore
 - `src/post.ts` : chaîne de post-traitement
