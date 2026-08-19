@@ -7,9 +7,9 @@
     "shot": { "hash": "d=120" }
   },
   {
-    "slug": "living-orb",
-    "title": "Orbe vivante",
-    "line": "Elle respire, bat, vous suit du regard et se lasse si vous insistez.",
+    "slug": "specimen",
+    "title": "Spécimen",
+    "line": "Une espèce inconnue, sous cloche. Elle vous voit, s'approche, se cache.",
     "stack": "Three.js · TypeScript · shaders"
   },
   {

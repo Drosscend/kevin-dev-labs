@@ -1,4 +1,4 @@
-# Orbe vivante
+# Spécimen
 
 Prototype Three.js : une orbe qui respire, bat, regarde, se distrait toute seule et se
 souvient de vous le temps d'une visite. Rien n'est préenregistré, tout est calculé image

@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "living-orb",
+      "name": "specimen",
       "dependencies": {
         "three": "^0.185.1",
       },
