@@ -100,6 +100,14 @@ Puis http://localhost:5180
 - **Tactile** : sans survol, un doigt posé vaut présence, un tap bref et immobile vaut coup sur
   la vitre, un doigt qui glisse vaut contact. Sur un écran étroit elle naît plus petite, sans
   quoi la largeur du volume ne lui laisserait pas de quoi nager.
+- **Profondeur** : l'eau entre elle et vous prend sa part. Chacun de ses trois matériaux fond
+  vers le bleu sombre et perd de son opacité avec la distance à la caméra, entre 2,6 et 6,2
+  unités, soit exactement de la vitre au fond. Contre le verre elle est intacte, au fond il ne
+  reste qu'une lueur : c'est ce qui donne l'échelle, sans une seule particule.
+- **Niveaux de détail** : décidés une fois au chargement d'après le plus petit côté de la
+  fenêtre. Sous 700 pixels, la membrane passe de 44 à 26 subdivisions (39 000 triangles à
+  13 500), le halo de 96 × 64 à 48 × 32, et le rapport de pixels est plafonné à 1,5 au lieu
+  de 2. Rien n'est réglable : une créature qui saccade n'est ni belle ni vivante.
 - **Post-traitement** : bloom, vitre, aberration chromatique radiale, vignette et grain.
 
 ## Structure
@@ -107,6 +115,7 @@ Puis http://localhost:5180
 - `src/main.ts` : boucle, câblage, contact du curseur
 - `src/vivarium.ts` : le volume, ses parois et son fond, déduits du champ de la caméra
 - `src/presence.ts` : le visiteur vu de l'intérieur, sa place, sa vitesse, ses coups
+- `src/quality.ts` : le niveau de détail, décidé une fois selon la fenêtre
 - `src/traits.ts` : ce que la graine décide, du corps au vocabulaire de couleurs
 - `src/memory.ts` : ce qui survit à l'onglet, et son refroidissement
 - `src/mind.ts` : profils d'humeur, machine à états, familiarité, curiosité et peur

@@ -20,6 +20,7 @@ import { Mind } from "./mind";
 import { Mist } from "./mist";
 import { createPost } from "./post";
 import { Presence } from "./presence";
+import { quality } from "./quality";
 import { Trace } from "./trace";
 import { traitsFrom } from "./traits";
 import { Vitals } from "./vitals";
@@ -39,7 +40,7 @@ const renderer = new WebGLRenderer({
   antialias: true,
   powerPreference: "high-performance",
 });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(quality.pixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.92;
@@ -114,7 +115,6 @@ window.addEventListener("resize", () => {
   camera.updateProjectionMatrix();
   vivarium.measure();
   body.resize(camera.aspect);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   post.resize(window.innerWidth, window.innerHeight);
 });

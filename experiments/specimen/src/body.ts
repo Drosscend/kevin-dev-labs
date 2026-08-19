@@ -13,6 +13,7 @@ import {
   Vector4,
 } from "three";
 import type { MoodProfile } from "./mind";
+import { quality } from "./quality";
 import coreFrag from "./shaders/core.frag.glsl?raw";
 import coreVert from "./shaders/core.vert.glsl?raw";
 import haloFrag from "./shaders/halo.frag.glsl?raw";
@@ -133,13 +134,16 @@ export class Body {
       },
     });
 
-    this.skin = new Mesh(new IcosahedronGeometry(1, 44), skinMaterial);
+    this.skin = new Mesh(new IcosahedronGeometry(1, quality.detail), skinMaterial);
     this.skin.renderOrder = 2;
 
     this.core = new Mesh(new IcosahedronGeometry(0.52, 24), coreMaterial);
     this.core.renderOrder = 1;
 
-    this.halo = new Mesh(new SphereGeometry(1.32, 96, 64), haloMaterial);
+    this.halo = new Mesh(
+      new SphereGeometry(1.32, quality.haloRings, quality.haloBands),
+      haloMaterial,
+    );
     this.halo.renderOrder = 3;
 
     this.group.add(this.core, this.skin, this.halo);

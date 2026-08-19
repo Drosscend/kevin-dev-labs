@@ -10,6 +10,7 @@ void main() {
   float facing = abs(dot(normalize(vNormal), view));
   float rim = pow(1.0 - facing, 3.8);
   float drift = 0.85 + 0.15 * sin(uTime * 0.63 + vWorldPos.y * 1.7);
-  float amount = rim * uIntensity * drift * 0.6;
+  float haze = smoothstep(2.6, 6.2, length(cameraPosition - vWorldPos));
+  float amount = rim * uIntensity * drift * 0.6 * (1.0 - haze * 0.65);
   gl_FragColor = vec4(uColor * amount, amount);
 }

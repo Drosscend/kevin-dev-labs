@@ -52,5 +52,11 @@ void main() {
   color += vec3(0.9, 0.97, 1.0) * spec * 0.22;
 
   float alpha = clamp(0.34 + fresnel * 0.7 + veins * 0.3 + vPulse * 0.8 + vHeat * 0.22, 0.0, 1.0);
+
+  // The water between you and it takes its share.
+  float haze = smoothstep(2.6, 6.2, length(cameraPosition - vWorldPos));
+  color *= mix(vec3(1.0), vec3(0.3, 0.42, 0.62), haze);
+  alpha *= 1.0 - haze * 0.35;
+
   gl_FragColor = vec4(color, alpha);
 }
