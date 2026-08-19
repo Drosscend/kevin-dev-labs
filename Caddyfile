@@ -9,4 +9,11 @@
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
 	}
+
+	handle_errors {
+		rewrite * /404.html
+		file_server {
+			status {err.status_code}
+		}
+	}
 }

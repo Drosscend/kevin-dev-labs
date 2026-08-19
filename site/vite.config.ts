@@ -76,4 +76,12 @@ function cards(): Plugin {
 export default defineConfig({
   plugins: [tailwindcss(), cards()],
   server: { port: 5190, strictPort: true },
+  build: {
+    rollupOptions: {
+      input: {
+        index: fileURLToPath(new URL("index.html", import.meta.url)),
+        404: fileURLToPath(new URL("404.html", import.meta.url)),
+      },
+    },
+  },
 });
