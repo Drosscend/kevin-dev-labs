@@ -1,0 +1,12 @@
+:80 {
+	root * /srv
+	encode zstd gzip
+	file_server
+
+	# Experiments are shared by link, never through a search engine.
+	header {
+		X-Robots-Tag "noindex, nofollow, noarchive, noimageindex"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+}

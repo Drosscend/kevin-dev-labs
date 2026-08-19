@@ -1,0 +1,16 @@
+services:
+  app:
+    build: .
+    restart: always
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  dokploy-network:
+    external: true
