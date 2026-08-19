@@ -14,7 +14,7 @@ lien, ne sont jamais indexées et n'ont aucune page de connexion.
 
 - `experiments.json` : le manifeste. Une entrée par expérience, dans l'ordre
   d'affichage : `slug`, `title`, `line`, `stack`, et un `shot` facultatif qui
-  règle sa capture (`hash`, `wait`, `click`). Source unique des cartes.
+  règle sa capture (`hash`, `wait`, `click`, `move`). Source unique des cartes.
 - `experiments/<slug>/` : une expérience. Le nom du dossier est son URL.
 - `site/` : la page d'accueil, projet Vite + Tailwind v4.
   - `site/index.html` : le cadre. Les cartes remplacent `<!-- cards -->`, un

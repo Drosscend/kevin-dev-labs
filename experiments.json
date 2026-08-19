@@ -10,7 +10,8 @@
     "slug": "specimen",
     "title": "Spécimen",
     "line": "Une espèce inconnue, sous cloche. Elle vous voit, s'approche, se cache.",
-    "stack": "Three.js · TypeScript · shaders"
+    "stack": "Three.js · TypeScript · shaders",
+    "shot": { "wait": 9000, "click": false, "move": true }
   },
   {
     "slug": "gargantua",

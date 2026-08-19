@@ -6,8 +6,9 @@
  *
  * The page is served from dist/, so build first. Per-experiment options live
  * in experiments.json under "shot": a URL fragment, a wait in milliseconds,
- * and whether to click (some experiments open on a title screen worth
- * keeping, others need the click to start).
+ * whether to click (some experiments open on a title screen worth keeping,
+ * others need the click to start), and whether to keep the pointer moving
+ * during that wait (some only come alive while someone is there).
  */
 import { existsSync } from "node:fs";
 import puppeteer from "puppeteer-core";
@@ -72,7 +73,7 @@ const browser = await puppeteer.launch({
 
 for (const experiment of targets) {
   const { slug, shot = {} } = experiment;
-  const { hash = "", wait = 7000, click = true } = shot;
+  const { hash = "", wait = 7000, click = true, move = false } = shot;
   const page = await browser.newPage();
   await page.setViewport({
     width: WIDTH,
@@ -84,7 +85,19 @@ for (const experiment of targets) {
     await page.goto(target, { waitUntil: "load", timeout: 60_000 });
     await Bun.sleep(6000);
     if (click) await page.mouse.click(WIDTH / 2, HEIGHT / 2);
-    await Bun.sleep(wait);
+    if (move) {
+      const steps = Math.max(1, Math.round(wait / 120));
+      for (let i = 0; i < steps; i++) {
+        const angle = (i / steps) * Math.PI * 4;
+        await page.mouse.move(
+          WIDTH / 2 + Math.cos(angle) * WIDTH * 0.17,
+          HEIGHT / 2 + Math.sin(angle) * HEIGHT * 0.17,
+        );
+        await Bun.sleep(120);
+      }
+    } else {
+      await Bun.sleep(wait);
+    }
     await page.screenshot({ path: `${OUT}/${slug}.webp`, type: "webp", quality: 82 });
     const size = Math.round(Bun.file(`${OUT}/${slug}.webp`).size / 1024);
     console.log(`ok   ${slug} (${size} kB)`);
