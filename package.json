@@ -1,0 +1,11 @@
+{
+  "name": "labs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "shots": "bun tools/shots.ts"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.8.0"
+  }
+}
