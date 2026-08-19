@@ -12,14 +12,20 @@ lien, ne sont jamais indexées et n'ont aucune page de connexion.
 
 ## Structure
 
+- `experiments.json` : le manifeste. Une entrée par expérience, dans l'ordre
+  d'affichage : `slug`, `title`, `line`, `stack`, et un `shot` facultatif qui
+  règle sa capture (`hash`, `wait`, `click`). Source unique des cartes.
+- `experiments/<slug>/` : une expérience. Le nom du dossier est son URL.
 - `site/` : la page d'accueil, projet Vite + Tailwind v4.
-  - `site/index.html` : une carte par expérience, écrites à la main.
+  - `site/index.html` : le cadre. Les cartes remplacent `<!-- cards -->`, un
+    plugin de `site/vite.config.ts` les rend depuis le manifeste.
+  - `site/404.html` : page d'erreur, deuxième entrée du build.
   - `site/src/app.css` : tokens, polices et accent copiés du site principal.
-  - `site/public/thumbs/<slug>.jpg` : vignettes, 1200 x 750.
+  - `site/public/thumbs/<slug>.webp` : vignettes, 800 x 500.
   - `site/public/robots.txt` : `Allow: /`, volontairement. Le crawl doit
     rester ouvert pour que l'en-tête `X-Robots-Tag: noindex` soit lu.
   - `site/analytics.html` : la balise Umami, injectée au build. Pas publiée.
-- `experiments/<slug>/` : une expérience. Le nom du dossier est son URL.
+- `tools/shots.ts` : capture les vignettes depuis `dist/`.
 - `dist/` : sortie du build, ignorée par git.
 
 ## Ajouter une expérience
@@ -30,11 +36,13 @@ lien, ne sont jamais indexées et n'ont aucune page de connexion.
    - **projet à builder** : `package.json` avec un script `build` qui produit
      `dist/`, et des chemins relatifs (`base: "./"` dans `vite.config.ts`),
      car la page est servie sous `/<slug>/` et non à la racine.
-3. Capturer une vignette en `site/public/thumbs/<slug>.jpg`, 1200 x 750.
-4. Copier un `<li>` dans `site/index.html` et corriger : `href="/<slug>/"`,
-   `src="/thumbs/<slug>.jpg"`, le titre, la ligne de description, les technos.
-5. `sh build.sh`, puis vérifier que `dist/<slug>/index.html` existe et que la
-   page s'ouvre depuis un serveur HTTP.
+3. Ajouter son entrée dans `experiments.json`.
+4. `sh build.sh`, puis `bun tools/shots.ts <slug>` : la vignette se capture sur
+   la page construite. Si elle tombe sur un écran d'accueil ou une animation
+   trop précoce, régler `shot` dans le manifeste plutôt que la reprendre à la
+   main.
+5. `sh build.sh` à nouveau, vérifier `dist/<slug>/index.html` et la carte sur
+   la page d'accueil, servie en HTTP.
 6. Commit, push sur `main`.
 
 ## Construire
@@ -45,6 +53,13 @@ lien, ne sont jamais indexées et n'ont aucune page de connexion.
   chaque page du résultat.
 - Servir `dist/` avec un serveur HTTP, jamais en `file://` : le micro de
   `jarvis` exige un contexte sécurisé, et les modules ES sont bloqués.
+
+```bash
+bunx serve dist
+```
+
+- Une action GitHub rejoue `build.sh` à chaque push : un build cassé se voit
+  sur le dépôt, sans attendre le déploiement.
 
 ## Déployer
 
@@ -59,6 +74,8 @@ curl -sI https://labs.kevin-dev.com/ | grep -i "x-robots"
 ## Ce qu'il ne faut pas faire
 
 - Ne pas versionner `dist/` ni `node_modules/`.
+- Ne pas écrire une carte à la main dans `site/index.html` : elle vient du
+  manifeste, et une carte codée en dur y serait effacée au build.
 - Ne pas coller la balise Umami dans une expérience : `build.sh` l'injecte.
 - Ne pas mettre de secret ni de donnée personnelle : le dépôt est public et le
   site est ouvert à qui a le lien.
