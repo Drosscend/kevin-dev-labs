@@ -19,7 +19,7 @@ function card({ slug, title, line, stack }: Experiment) {
   return `        <li>
           <a
             href="/${slug}/"
-            class="group block overflow-hidden rounded-lg border border-border bg-card transition duration-300 hover:border-primary/40 hover:shadow-xl"
+            class="group block overflow-hidden rounded-lg border border-border bg-card transition duration-300 hover:border-primary/40 hover:shadow-xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
           >
             <span class="block overflow-hidden">
               <img
