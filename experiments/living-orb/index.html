@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orbe vivante</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><circle cx=%2232%22 cy=%2232%22 r=%2226%22 fill=%22%232fd6c0%22/></svg>" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --ink: rgba(233, 240, 255, 0.62);
+      }
+      * {
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+        background: #04060d;
+      }
+      body {
+        font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+        cursor: crosshair;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .readout {
+        position: fixed;
+        bottom: 1.75rem;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: baseline;
+        gap: 0.75rem;
+        color: var(--ink);
+        font-size: 0.78rem;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        pointer-events: none;
+        user-select: none;
+      }
+      .readout b {
+        font-weight: 500;
+        transition: color 600ms ease;
+      }
+      .readout span {
+        opacity: 0.45;
+        font-variant-numeric: tabular-nums;
+      }
+      .hint {
+        position: fixed;
+        top: 1.75rem;
+        left: 50%;
+        transform: translateX(-50%);
+        color: var(--ink);
+        font-size: 0.72rem;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        pointer-events: none;
+        user-select: none;
+        transition: opacity 1.2s ease;
+      }
+      .hint[data-seen="true"] {
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <p class="hint" id="hint">Approchez, cliquez, laissez-la tranquille</p>
+    <p class="readout">
+      <b id="mood" aria-live="polite">au repos</b>
+      <span id="pulse">0 bpm</span>
+    </p>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

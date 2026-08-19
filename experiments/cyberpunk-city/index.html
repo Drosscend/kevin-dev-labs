@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neon District — Tableau Vivant Cyberpunk</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #050008; }
+  canvas { display: block; }
+  #hud {
+    position: fixed; top: 16px; left: 16px; z-index: 10;
+    font-family: 'Courier New', monospace; color: #00f0ff;
+    text-shadow: 0 0 8px #00f0ff; user-select: none; pointer-events: none;
+  }
+  #hud h1 { font-size: 18px; letter-spacing: 4px; }
+  #hud p { font-size: 11px; color: #ff2bd6; text-shadow: 0 0 6px #ff2bd6; margin-top: 4px; line-height: 1.7; }
+  #soundBtn {
+    position: fixed; top: 16px; right: 16px; z-index: 11;
+    font-family: 'Courier New', monospace; font-size: 13px;
+    color: #00f0ff; background: rgba(5,0,15,0.6);
+    border: 1px solid #00f0ff; padding: 8px 14px; cursor: pointer;
+    text-shadow: 0 0 6px #00f0ff; letter-spacing: 2px;
+  }
+  #soundBtn:hover { background: rgba(0,240,255,0.15); }
+  #shotLabel {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    z-index: 10; font-family: 'Courier New', monospace; font-size: 12px;
+    color: #ffe600; text-shadow: 0 0 8px #ffe600; letter-spacing: 3px;
+    pointer-events: none; opacity: 0.85;
+  }
+  #scan {
+    position: fixed; inset: 0; z-index: 5; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0px, rgba(0,0,0,0.12) 1px, transparent 1px, transparent 3px);
+    mix-blend-mode: multiply;
+  }
+  #vignette {
+    position: fixed; inset: 0; z-index: 4; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 52%, rgba(5,0,15,0.8) 100%);
+  }
+  .bar { position: fixed; left: 0; right: 0; height: 5vh; background: #000; z-index: 6; pointer-events: none; }
+  #barTop { top: 0; } #barBot { bottom: 0; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <h1>NEON DISTRICT // 2077</h1>
+  <p>mode cinéma automatique — laisse tourner<br>
+  espace : auto / libre &nbsp; 1-7 : plans &nbsp; glisser : parallaxe &nbsp; molette : zoom</p>
+</div>
+<button id="soundBtn">SON : OFF</button>
+<div id="shotLabel"></div>
+<div class="bar" id="barTop"></div>
+<div class="bar" id="barBot"></div>
+<div id="vignette"></div>
+<div id="scan"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ===============================================================
+  // Renderer (robust creation with fallbacks)
+  // ===============================================================
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x050008);
+  scene.fog = new THREE.FogExp2(0x0a0018, 0.0058);
+
+  const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 1800);
+  camera.position.set(170, 72, 170);
+
+  function createRenderer() {
+    const attempts = [
+      { antialias: true, powerPreference: 'high-performance' },
+      { antialias: false, powerPreference: 'default' },
+      { antialias: false, powerPreference: 'default', failIfMajorPerformanceCaveat: false }
+    ];
+    for (const opts of attempts) {
+      try {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('webgl2', opts) || canvas.getContext('webgl', opts);
+        if (!ctx) continue;
+        return new THREE.WebGLRenderer({ canvas, context: ctx, ...opts });
+      } catch (e) { /* try next */ }
+    }
+    return null;
+  }
+  const renderer = createRenderer();
+  if (!renderer) {
+    document.getElementById('hud').innerHTML =
+      '<h1>WEBGL INDISPONIBLE</h1><p>Active l\'accélération matérielle du navigateur puis redémarre-le.<br>Test : get.webgl.org</p>';
+    return;
+  }
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.3;
+  document.body.appendChild(renderer.domElement);
+
+  const NEON = [0x00f0ff, 0xff2bd6, 0xb026ff, 0xff6b00, 0x39ff14, 0xffe600];
+
+  // ===============================================================
+  // Shared helpers: glow sprite
+  // ===============================================================
+  const glowCanvas = document.createElement('canvas');
+  glowCanvas.width = glowCanvas.height = 64;
+  const gcx = glowCanvas.getContext('2d');
+  const grd = gcx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.3, 'rgba(255,255,255,0.5)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  gcx.fillStyle = grd;
+  gcx.fillRect(0, 0, 64, 64);
+  const glowTex = new THREE.CanvasTexture(glowCanvas);
+
+  function glowSprite(color, scale, opacity) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, color, transparent: true, opacity: opacity || 1,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    }));
+    s.scale.set(scale, scale, 1);
+    return s;
+  }
+
+  // ===============================================================
+  // Sky: stars + pink moon
+  // ===============================================================
+  const starGeo = new THREE.BufferGeometry();
+  const starPos = new Float32Array(1200 * 3);
+  for (let i = 0; i < 1200; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = 500 + Math.random() * 400;
+    starPos[i * 3] = Math.cos(a) * r;
+    starPos[i * 3 + 1] = 60 + Math.random() * 500;
+    starPos[i * 3 + 2] = Math.sin(a) * r;
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({
+    color: 0xaaccff, size: 1.6, transparent: true, opacity: 0.7,
+    blending: THREE.AdditiveBlending, depthWrite: false, fog: false
+  })));
+
+  const moon = new THREE.Mesh(
+    new THREE.SphereGeometry(26, 24, 24),
+    new THREE.MeshBasicMaterial({ color: 0xffc4e8, fog: false })
+  );
+  moon.position.set(-260, 230, -420);
+  scene.add(moon);
+  const moonHalo = glowSprite(0xff8ad6, 160, 0.6);
+  moonHalo.material.fog = false;
+  moonHalo.position.copy(moon.position);
+  scene.add(moonHalo);
+
+  // ===============================================================
+  // Textures: windows, vertical kanji signs
+  // ===============================================================
+  function makeWindowTexture(tint) {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 128;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#05030a';
+    ctx.fillRect(0, 0, 64, 128);
+    const col = new THREE.Color(tint);
+    for (let y = 4; y < 124; y += 8) {
+      for (let x = 4; x < 60; x += 8) {
+        if (Math.random() < 0.55) {
+          if (Math.random() > 0.85) ctx.fillStyle = '#' + col.getHexString();
+          else {
+            const v = 40 + Math.floor(Math.random() * 120);
+            ctx.fillStyle = 'rgb(' + v + ',' + Math.floor(v * 0.8) + ',' + Math.floor(v * 0.5) + ')';
+          }
+          ctx.fillRect(x, y, 4, 5);
+        }
+      }
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.magFilter = THREE.NearestFilter;
+    return tex;
+  }
+  const windowTextures = NEON.map(makeWindowTexture);
+
+  function makeVerticalSign(text, color) {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 256;
+    const ctx = c.getContext('2d');
+    ctx.font = 'bold 40px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = color;
+    const chars = text.split('');
+    const step = 256 / (chars.length + 1);
+    chars.forEach((ch, k) => ctx.fillText(ch, 32, step * (k + 1)));
+    return new THREE.CanvasTexture(c);
+  }
+  const SIGN_TEXTS = ['ネオン', '電脳都市', 'ラーメン', 'サイバー', '夜の街', 'ホテル'];
+  const SIGN_COLORS = ['#00f0ff', '#ff2bd6', '#39ff14', '#ffe600', '#ff6b00', '#b026ff'];
+
+  // ===============================================================
+  // City
+  // ===============================================================
+  const beacons = [];
+  const tallBuildings = [];
+  const flickerSigns = [];
+
+  const GRID = 14, CELL = 26, STREET = 10;
+  const HALF = (GRID * CELL) / 2;
+
+  const edgeMatCache = {};
+  function edgeMaterial(color) {
+    if (!edgeMatCache[color]) edgeMatCache[color] = new THREE.MeshBasicMaterial({ color });
+    return edgeMatCache[color];
+  }
+
+  for (let i = 0; i < GRID; i++) {
+    for (let j = 0; j < GRID; j++) {
+      const cx = i * CELL - HALF + CELL / 2;
+      const cz = j * CELL - HALF + CELL / 2;
+      if (Math.abs(cx) < 20 && Math.abs(cz) < 20) continue;
+
+      const w = CELL - STREET - Math.random() * 4;
+      const d = CELL - STREET - Math.random() * 4;
+      const distNorm = Math.hypot(cx, cz) / HALF;
+      const h = 18 + Math.random() * 95 * (1.25 - distNorm) + Math.random() * 25;
+      const tint = NEON[(i * 7 + j * 3) % NEON.length];
+
+      const bld = new THREE.Mesh(
+        new THREE.BoxGeometry(w, h, d),
+        new THREE.MeshStandardMaterial({
+          color: 0x0b0614,
+          emissive: 0xffffff,
+          emissiveMap: windowTextures[(i + j) % windowTextures.length],
+          emissiveIntensity: 1.6,
+          map: windowTextures[(i + j) % windowTextures.length],
+          roughness: 0.85, metalness: 0.35
+        })
+      );
+      bld.position.set(cx, h / 2, cz);
+      scene.add(bld);
+
+      if (h > 55) tallBuildings.push({ x: cx, z: cz, h, w, d, tint });
+
+      if (h > 50 && Math.random() < 0.8) {
+        const trim = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 0.8, d + 0.8), edgeMaterial(tint));
+        trim.position.set(cx, h * (0.82 + Math.random() * 0.14), cz);
+        scene.add(trim);
+      }
+      if (h > 85) {
+        const trim2 = new THREE.Mesh(new THREE.BoxGeometry(w + 0.8, 0.6, d + 0.8), edgeMaterial(0x00f0ff));
+        trim2.position.set(cx, h * 0.5, cz);
+        scene.add(trim2);
+      }
+      if (h > 70 && Math.random() < 0.6) {
+        const ant = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.3, 0.3, 14, 6),
+          new THREE.MeshBasicMaterial({ color: 0x222233 })
+        );
+        ant.position.set(cx, h + 7, cz);
+        scene.add(ant);
+        const beacon = new THREE.Mesh(
+          new THREE.SphereGeometry(1.1, 8, 8),
+          new THREE.MeshBasicMaterial({ color: 0xff2244 })
+        );
+        beacon.position.set(cx, h + 14, cz);
+        beacon.userData.blink = Math.random() * Math.PI * 2;
+        beacons.push(beacon);
+        scene.add(beacon);
+      }
+      // vertical kanji sign facing the plaza, with flicker behaviour
+      if (h > 60 && Math.random() < 0.55) {
+        const idx = (i + j * 3) % SIGN_TEXTS.length;
+        const sign = new THREE.Mesh(
+          new THREE.PlaneGeometry(5, 20),
+          new THREE.MeshBasicMaterial({
+            map: makeVerticalSign(SIGN_TEXTS[idx], SIGN_COLORS[idx]),
+            transparent: true, side: THREE.DoubleSide,
+            blending: THREE.AdditiveBlending, depthWrite: false
+          })
+        );
+        const toward = Math.atan2(-cz, -cx);
+        sign.position.set(
+          cx + Math.cos(toward) * (w / 2 + 0.3),
+          h * 0.55,
+          cz + Math.sin(toward) * (d / 2 + 0.3)
+        );
+        sign.rotation.y = -toward + Math.PI / 2;
+        scene.add(sign);
+        flickerSigns.push({ mesh: sign, next: Math.random() * 5 });
+      }
+    }
+  }
+
+  // Skybridges between nearby tall towers
+  let bridgeCount = 0;
+  for (let a = 0; a < tallBuildings.length && bridgeCount < 16; a++) {
+    for (let b = a + 1; b < tallBuildings.length && bridgeCount < 16; b++) {
+      const A = tallBuildings[a], B = tallBuildings[b];
+      const dist = Math.hypot(A.x - B.x, A.z - B.z);
+      if (dist > 30 && dist < 58 && Math.random() < 0.3) {
+        const y = Math.min(A.h, B.h) * (0.45 + Math.random() * 0.25);
+        const bridge = new THREE.Mesh(
+          new THREE.BoxGeometry(dist, 1.4, 2.2),
+          new THREE.MeshBasicMaterial({ color: NEON[bridgeCount % NEON.length] })
+        );
+        bridge.position.set((A.x + B.x) / 2, y, (A.z + B.z) / 2);
+        bridge.rotation.y = -Math.atan2(B.z - A.z, B.x - A.x);
+        scene.add(bridge);
+        bridgeCount++;
+      }
+    }
+  }
+
+  // ===============================================================
+  // Ground + street light streaks
+  // ===============================================================
+  const groundC = document.createElement('canvas');
+  groundC.width = groundC.height = 512;
+  const gctx = groundC.getContext('2d');
+  gctx.fillStyle = '#070310';
+  gctx.fillRect(0, 0, 512, 512);
+  gctx.strokeStyle = 'rgba(0,240,255,0.45)';
+  gctx.lineWidth = 2;
+  for (let k = 0; k <= 512; k += 64) {
+    gctx.beginPath(); gctx.moveTo(k, 0); gctx.lineTo(k, 512); gctx.stroke();
+    gctx.beginPath(); gctx.moveTo(0, k); gctx.lineTo(512, k); gctx.stroke();
+  }
+  gctx.strokeStyle = 'rgba(255,43,214,0.25)';
+  for (let k = 32; k <= 512; k += 64) {
+    gctx.beginPath(); gctx.moveTo(k, 0); gctx.lineTo(k, 512); gctx.stroke();
+  }
+  const groundTex = new THREE.CanvasTexture(groundC);
+  groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
+  groundTex.repeat.set(GRID, GRID);
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(HALF * 2.8, HALF * 2.8),
+    new THREE.MeshStandardMaterial({
+      color: 0x0a0616,
+      emissive: 0x00f0ff, emissiveMap: groundTex, emissiveIntensity: 0.5,
+      map: groundTex, roughness: 0.3, metalness: 0.8
+    })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  scene.add(ground);
+
+  const streaks = [];
+  for (let s = 0; s < 44; s++) {
+    const horizontal = Math.random() < 0.5;
+    const lane = Math.floor(Math.random() * (GRID + 1)) * CELL - HALF + (Math.random() < 0.5 ? -2.5 : 2.5);
+    const m = new THREE.Mesh(
+      new THREE.BoxGeometry(11, 0.25, 0.6),
+      new THREE.MeshBasicMaterial({
+        color: Math.random() < 0.5 ? 0xff6b00 : 0x00f0ff,
+        transparent: true, opacity: 0.85,
+        blending: THREE.AdditiveBlending, depthWrite: false
+      })
+    );
+    if (!horizontal) m.rotation.y = Math.PI / 2;
+    m.position.y = 0.4;
+    scene.add(m);
+    streaks.push({
+      mesh: m, horizontal, lane,
+      pos: (Math.random() - 0.5) * HALF * 2,
+      speed: (28 + Math.random() * 40) * (Math.random() < 0.5 ? 1 : -1)
+    });
+  }
+
+  // ===============================================================
+  // Highway rings, pulses, flying cars (incl. police)
+  // ===============================================================
+  const RINGS = [{ r: 62, h: 38 }, { r: 102, h: 58 }, { r: 142, h: 78 }];
+  const pulses = [];
+  for (const ring of RINGS) {
+    const torus = new THREE.Mesh(
+      new THREE.TorusGeometry(ring.r, 0.7, 8, 120),
+      new THREE.MeshBasicMaterial({ color: 0x1c1c3d })
+    );
+    torus.rotation.x = Math.PI / 2;
+    torus.position.y = ring.h;
+    scene.add(torus);
+    for (let p = 0; p < 7; p++) {
+      const sp = glowSprite(NEON[p % NEON.length], 5, 0.9);
+      scene.add(sp);
+      pulses.push({ sprite: sp, r: ring.r, h: ring.h, angle: Math.random() * Math.PI * 2, speed: 0.6 + Math.random() * 0.7 });
+    }
+  }
+
+  const cars = [];
+  for (let n = 0; n < 42; n++) {
+    const ring = RINGS[n % RINGS.length];
+    const isPolice = n < 2;
+    const color = isPolice ? 0xff2244 : NEON[n % NEON.length];
+    const body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.7, 1.3), new THREE.MeshBasicMaterial({ color }));
+    const halo = glowSprite(color, 9);
+    body.add(halo);
+    const trail = new THREE.Mesh(
+      new THREE.PlaneGeometry(16, 0.5),
+      new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0.55,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+      })
+    );
+    trail.position.x = -9.5;
+    body.add(trail);
+    const trail2 = trail.clone();
+    trail2.rotation.x = Math.PI / 2;
+    body.add(trail2);
+    scene.add(body);
+    cars.push({
+      mesh: body, halo, trailMats: [trail.material, trail2.material], isPolice,
+      radius: ring.r + (Math.random() - 0.5) * 8,
+      height: ring.h + (Math.random() - 0.5) * 5,
+      speed: (0.14 + Math.random() * 0.26) * (Math.random() < 0.5 ? 1 : -1),
+      angle: Math.random() * Math.PI * 2,
+      bob: Math.random() * Math.PI * 2
+    });
+  }
+
+  // ===============================================================
+  // Suspended train on its own circular rail
+  // ===============================================================
+  const TRAIN_R = 84, TRAIN_H = 46;
+  const rail = new THREE.Mesh(
+    new THREE.TorusGeometry(TRAIN_R, 0.55, 8, 140),
+    new THREE.MeshBasicMaterial({ color: 0x2a2a55 })
+  );
+  rail.rotation.x = Math.PI / 2;
+  rail.position.y = TRAIN_H;
+  scene.add(rail);
+  for (let p = 0; p < 12; p++) {
+    const a = (p / 12) * Math.PI * 2;
+    const pillar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.6, 0.9, TRAIN_H, 6),
+      new THREE.MeshBasicMaterial({ color: 0x14142a })
+    );
+    pillar.position.set(Math.cos(a) * TRAIN_R, TRAIN_H / 2, Math.sin(a) * TRAIN_R);
+    scene.add(pillar);
+  }
+  const wagons = [];
+  let trainAngle = 0;
+  const TRAIN_SPEED = 0.16;
+  const WAGON_GAP = 7.6 / TRAIN_R;
+  for (let wgn = 0; wgn < 6; wgn++) {
+    const wagon = new THREE.Mesh(
+      new THREE.BoxGeometry(6.4, 2.2, 2.4),
+      new THREE.MeshStandardMaterial({
+        color: 0x101024,
+        emissive: 0xffffff, emissiveMap: windowTextures[wgn % windowTextures.length],
+        emissiveIntensity: 1.8, map: windowTextures[wgn % windowTextures.length]
+      })
+    );
+    if (wgn === 0) wagon.add(glowSprite(0xffe600, 8, 0.9));
+    scene.add(wagon);
+    wagons.push(wagon);
+  }
+  const trainHeadPos = new THREE.Vector3();
+
+  // ===============================================================
+  // Advertising blimp with animated screen
+  // ===============================================================
+  const blimp = new THREE.Group();
+  const hull = new THREE.Mesh(
+    new THREE.SphereGeometry(7, 20, 14),
+    new THREE.MeshStandardMaterial({ color: 0x1a1030, roughness: 0.6, metalness: 0.4 })
+  );
+  hull.scale.set(2.4, 0.85, 0.85);
+  blimp.add(hull);
+  const gondola = new THREE.Mesh(new THREE.BoxGeometry(5, 1.4, 1.6), new THREE.MeshBasicMaterial({ color: 0x0b0b18 }));
+  gondola.position.y = -6.2;
+  blimp.add(gondola);
+  blimp.add(glowSprite(0xff2bd6, 14, 0.4));
+  scene.add(blimp);
+  let blimpAngle = 0;
+
+  // ===============================================================
+  // Drones, searchlights
+  // ===============================================================
+  const drones = [];
+  for (let d = 0; d < 14; d++) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(new THREE.OctahedronGeometry(1.1), new THREE.MeshBasicMaterial({ color: 0x15152a })));
+    const light = glowSprite(NEON[d % NEON.length], 4, 0.9);
+    g.add(light);
+    g.position.set((Math.random() - 0.5) * HALF * 1.6, 35 + Math.random() * 70, (Math.random() - 0.5) * HALF * 1.6);
+    scene.add(g);
+    drones.push({ g, light, base: g.position.clone(), f1: 0.3 + Math.random(), f2: 0.3 + Math.random(), ph: Math.random() * Math.PI * 2 });
+  }
+
+  const searchlights = [];
+  for (const [sx, sh, sz] of [[-90, 95, -64], [78, 100, 52], [-52, 88, 116]]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx, sh, sz);
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry(26, 140, 20, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: 0x99ccff, transparent: true, opacity: 0.07,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+      })
+    );
+    cone.rotation.x = Math.PI;
+    cone.position.y = 70;
+    const tilt = new THREE.Group();
+    tilt.rotation.z = 0.45;
+    tilt.add(cone);
+    pivot.add(tilt);
+    scene.add(pivot);
+    searchlights.push({ pivot, speed: 0.25 + Math.random() * 0.3 });
+  }
+
+  // ===============================================================
+  // Central hologram + beam + rising data rings
+  // ===============================================================
+  const holoGroup = new THREE.Group();
+  holoGroup.position.set(0, 78, 0);
+  const holoOuter = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(15, 1),
+    new THREE.MeshBasicMaterial({ color: 0x00f0ff, wireframe: true, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  const holoInner = new THREE.Mesh(
+    new THREE.OctahedronGeometry(8),
+    new THREE.MeshBasicMaterial({ color: 0xff2bd6, wireframe: true, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false })
+  );
+  holoGroup.add(holoOuter, holoInner, glowSprite(0x00f0ff, 60, 0.35));
+  scene.add(holoGroup);
+
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(5, 11, 156, 20, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })
+  );
+  beam.position.y = 78;
+  scene.add(beam);
+
+  const dataRings = [];
+  for (let r = 0; r < 5; r++) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(7, 0.25, 6, 40),
+      new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = r * 30;
+    scene.add(ring);
+    dataRings.push(ring);
+  }
+
+  // ===============================================================
+  // Holographic billboards (with optional parent, e.g. the blimp)
+  // ===============================================================
+  const holoPanels = [];
+  function makeHolo(text, color, x, y, z, ry, parent, w, h) {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 128;
+    const ctx = c.getContext('2d');
+    const tex = new THREE.CanvasTexture(c);
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(w || 26, h || 13),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.9, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+    mesh.position.set(x, y, z);
+    mesh.rotation.y = ry;
+    (parent || scene).add(mesh);
+    holoPanels.push({ ctx, tex, text, color, t: Math.random() * 10 });
+  }
+  makeHolo('東京 2077', '#00f0ff', -34, 82, -60, 0.5);
+  makeHolo('NEON', '#ff2bd6', 40, 96, -90, -0.4);
+  makeHolo('サイバー', '#b026ff', -70, 64, 30, 1.2);
+  makeHolo('STMS▲CORP', '#39ff14', 64, 74, 48, -1.1);
+  makeHolo('GLITCH', '#ffe600', 0, 118, -140, 0);
+  makeHolo('未来', '#ff6b00', -110, 70, -110, 0.8);
+  makeHolo('CAPY//NET', '#00f0ff', 110, 86, -40, -0.7);
+  makeHolo('DRINK NEKO', '#ff2bd6', 0, 0, 7.5, 0, blimp, 24, 9);   // blimp side screen
+  makeHolo('DRINK NEKO', '#ff2bd6', 0, 0, -7.5, Math.PI, blimp, 24, 9);
+
+  function drawHolo(p, time) {
+    const ctx = p.ctx;
+    ctx.clearRect(0, 0, 256, 128);
+    for (let s = 0; s < 6; s++) {
+      ctx.fillStyle = p.color + '22';
+      ctx.fillRect(0, Math.random() * 128, 256, 3 + Math.random() * 6);
+    }
+    ctx.font = 'bold 38px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const jx = (Math.random() < 0.08) ? (Math.random() * 10 - 5) : 0;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = p.color;
+    ctx.fillText(p.text, 128 + jx, 64 + Math.sin(time * 2 + p.t) * 3);
+    ctx.strokeStyle = p.color;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(4, 4, 248, 120);
+    p.tex.needsUpdate = true;
+  }
+
+  // ===============================================================
+  // Pedestrians with neon umbrellas
+  // ===============================================================
+  const peds = [];
+  const PED_LANES = [-52, -26, 26, 52];
+  for (let n = 0; n < 38; n++) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.32, 0.42, 1.5, 8),
+      new THREE.MeshStandardMaterial({ color: [0x16162c, 0x241430, 0x101a2a][n % 3], roughness: 0.9 })
+    );
+    body.position.y = 0.85;
+    g.add(body);
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.28, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0x3a2e3e })
+    );
+    head.position.y = 1.85;
+    g.add(head);
+    const umbColor = NEON[n % NEON.length];
+    const umb = new THREE.Mesh(
+      new THREE.ConeGeometry(1.15, 0.5, 8),
+      new THREE.MeshBasicMaterial({ color: umbColor, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
+    );
+    umb.position.y = 2.55;
+    g.add(umb);
+    const handle = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.03, 0.03, 0.9, 4),
+      new THREE.MeshBasicMaterial({ color: 0x444466 })
+    );
+    handle.position.y = 2.1;
+    g.add(handle);
+    scene.add(g);
+    const horizontal = Math.random() < 0.5;
+    peds.push({
+      g, horizontal,
+      lane: PED_LANES[n % PED_LANES.length] + (Math.random() < 0.5 ? -3.2 : 3.2),
+      pos: (Math.random() - 0.5) * 160,
+      speed: (2 + Math.random() * 2.5) * (Math.random() < 0.5 ? 1 : -1),
+      ph: Math.random() * Math.PI * 2
+    });
+  }
+
+  // ===============================================================
+  // Street steam vents
+  // ===============================================================
+  const steamParticles = [];
+  for (const [vx, vz] of [[22, 22], [-22, 18], [18, -24], [-26, -22], [52, 2], [2, -52]]) {
+    for (let p = 0; p < 4; p++) {
+      const sp = glowSprite(0x8899bb, 3, 0.2);
+      sp.position.set(vx + (Math.random() - 0.5) * 2, Math.random() * 9, vz + (Math.random() - 0.5) * 2);
+      scene.add(sp);
+      steamParticles.push({ sprite: sp, vx, vz, y: Math.random() * 9, speed: 1.2 + Math.random() * 1.4 });
+    }
+  }
+
+  // ===============================================================
+  // Taxi landing loop on a rooftop pad
+  // ===============================================================
+  let padB = tallBuildings.find((b) => b.h > 78 && Math.hypot(b.x, b.z) < 110) || { x: 39, z: 39, h: 80 };
+  const pad = new THREE.Mesh(
+    new THREE.CylinderGeometry(5, 5, 0.4, 16),
+    new THREE.MeshBasicMaterial({ color: 0x1a1a35 })
+  );
+  pad.position.set(padB.x, padB.h + 0.2, padB.z);
+  scene.add(pad);
+  const padRing = new THREE.Mesh(
+    new THREE.TorusGeometry(4.4, 0.18, 6, 32),
+    new THREE.MeshBasicMaterial({ color: 0xffe600 })
+  );
+  padRing.rotation.x = Math.PI / 2;
+  padRing.position.set(padB.x, padB.h + 0.5, padB.z);
+  scene.add(padRing);
+
+  const taxi = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.9, 1.5), new THREE.MeshBasicMaterial({ color: 0xffe600 }));
+  taxi.add(glowSprite(0xffe600, 8, 0.8));
+  scene.add(taxi);
+  let taxiPhase = 0;   // 0 descend, 1 idle, 2 ascend, 3 cruise
+  let taxiT = 0;
+
+  // ===============================================================
+  // Rain, smog, lights, lightning
+  // ===============================================================
+  const RAIN_COUNT = 3000;
+  const rainGeo = new THREE.BufferGeometry();
+  const rainPos = new Float32Array(RAIN_COUNT * 3);
+  const rainVel = new Float32Array(RAIN_COUNT);
+  for (let r = 0; r < RAIN_COUNT; r++) {
+    rainPos[r * 3] = (Math.random() - 0.5) * 520;
+    rainPos[r * 3 + 1] = Math.random() * 230;
+    rainPos[r * 3 + 2] = (Math.random() - 0.5) * 520;
+    rainVel[r] = 1.6 + Math.random() * 2.2;
+  }
+  rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
+  scene.add(new THREE.Points(rainGeo, new THREE.PointsMaterial({
+    color: 0x88bbff, size: 0.5, transparent: true, opacity: 0.4,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  })));
+
+  const smogs = [];
+  for (let s = 0; s < 6; s++) {
+    const sm = glowSprite(s % 2 ? 0x4a2070 : 0x203560, 200 + Math.random() * 120, 0.06);
+    sm.position.set((Math.random() - 0.5) * 300, 30 + Math.random() * 60, (Math.random() - 0.5) * 300);
+    scene.add(sm);
+    smogs.push({ sprite: sm, speed: 1.5 + Math.random() * 2.5 });
+  }
+
+  const ambient = new THREE.AmbientLight(0x221133, 1.4);
+  scene.add(ambient);
+  const moonLight = new THREE.DirectionalLight(0x3344aa, 0.5);
+  moonLight.position.set(-80, 200, -60);
+  scene.add(moonLight);
+  const plazaLight1 = new THREE.PointLight(0xff2bd6, 2.2, 170);
+  plazaLight1.position.set(-30, 30, 0);
+  scene.add(plazaLight1);
+  const plazaLight2 = new THREE.PointLight(0x00f0ff, 2.2, 170);
+  plazaLight2.position.set(30, 40, 20);
+  scene.add(plazaLight2);
+
+  let flash = 0;
+  let nextLightning = 5 + Math.random() * 9;
+  const bgNormal = new THREE.Color(0x050008);
+  const bgFlash = new THREE.Color(0x2a1850);
+
+  // ===============================================================
+  // Synthesized ambient audio (rain + city hum + thunder)
+  // ===============================================================
+  let audio = null;
+  function createAudio() {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    const master = ctx.createGain();
+    master.gain.value = 0.8;
+    master.connect(ctx.destination);
+
+    // pink noise buffer (Paul Kellet approximation): much softer
+    // and more natural than raw white noise
+    const len = ctx.sampleRate * 4;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < len; i++) {
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.96900 * b2 + white * 0.1538520;
+      b3 = 0.86650 * b3 + white * 0.3104856;
+      b4 = 0.55000 * b4 + white * 0.5329522;
+      b5 = -0.7616 * b5 - white * 0.0168980;
+      data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+      b6 = white * 0.115926;
+    }
+
+    function pinkSource() {
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      return src;
+    }
+
+    // --- rain patter: gentle band of pink noise, smoothed
+    const rainSrc = pinkSource();
+    const rainBP = ctx.createBiquadFilter();
+    rainBP.type = 'bandpass';
+    rainBP.frequency.value = 2200;
+    rainBP.Q.value = 0.4;
+    const rainLP = ctx.createBiquadFilter();
+    rainLP.type = 'lowpass';
+    rainLP.frequency.value = 5200;
+    const rainGain = ctx.createGain();
+    rainGain.gain.value = 0.16;
+    rainSrc.connect(rainBP); rainBP.connect(rainLP);
+    rainLP.connect(rainGain); rainGain.connect(master);
+    rainSrc.start();
+
+    // --- low city rumble: deep filtered pink noise that slowly breathes
+    const rumbleSrc = pinkSource();
+    const rumbleLP = ctx.createBiquadFilter();
+    rumbleLP.type = 'lowpass';
+    rumbleLP.frequency.value = 180;
+    const rumbleGain = ctx.createGain();
+    rumbleGain.gain.value = 0.22;
+    rumbleSrc.connect(rumbleLP); rumbleLP.connect(rumbleGain);
+    rumbleGain.connect(master);
+    rumbleSrc.start();
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.05;
+    const lfoG = ctx.createGain();
+    lfoG.gain.value = 0.08;
+    lfo.connect(lfoG); lfoG.connect(rumbleGain.gain);
+    lfo.start();
+
+    // --- soft harmonic pad: two slightly detuned sines through a
+    // dark lowpass, barely audible, gives the "blade runner" mood
+    const padLP = ctx.createBiquadFilter();
+    padLP.type = 'lowpass';
+    padLP.frequency.value = 420;
+    const padGain = ctx.createGain();
+    padGain.gain.value = 0.035;
+    padLP.connect(padGain); padGain.connect(master);
+    [[110, 'sine'], [110.6, 'sine'], [165, 'triangle']].forEach(([f, type]) => {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = f;
+      const og = ctx.createGain();
+      og.gain.value = f > 150 ? 0.25 : 0.5;
+      o.connect(og); og.connect(padLP);
+      o.start();
+    });
+    // very slow movement of the pad filter so it never feels static
+    const padLfo = ctx.createOscillator();
+    padLfo.frequency.value = 0.03;
+    const padLfoG = ctx.createGain();
+    padLfoG.gain.value = 140;
+    padLfo.connect(padLfoG); padLfoG.connect(padLP.frequency);
+    padLfo.start();
+
+    // --- thunder: deep noise roll + sub oscillator with proper envelope
+    function thunder() {
+      const now = ctx.currentTime;
+      const n = pinkSource();
+      n.loop = false;
+      const tLP = ctx.createBiquadFilter();
+      tLP.type = 'lowpass';
+      tLP.frequency.setValueAtTime(400, now);
+      tLP.frequency.exponentialRampToValueAtTime(70, now + 3.5);
+      const tg = ctx.createGain();
+      tg.gain.setValueAtTime(0.0001, now);
+      tg.gain.exponentialRampToValueAtTime(0.9, now + 0.18);
+      tg.gain.exponentialRampToValueAtTime(0.25, now + 1.2);
+      tg.gain.exponentialRampToValueAtTime(0.0001, now + 4.5);
+      n.connect(tLP); tLP.connect(tg); tg.connect(master);
+      n.start(now);
+      n.stop(now + 4.6);
+      // sub-bass body
+      const sub = ctx.createOscillator();
+      sub.type = 'sine';
+      sub.frequency.setValueAtTime(48, now);
+      sub.frequency.exponentialRampToValueAtTime(28, now + 3);
+      const sg = ctx.createGain();
+      sg.gain.setValueAtTime(0.0001, now);
+      sg.gain.exponentialRampToValueAtTime(0.35, now + 0.15);
+      sg.gain.exponentialRampToValueAtTime(0.0001, now + 3.5);
+      sub.connect(sg); sg.connect(master);
+      sub.start(now);
+      sub.stop(now + 3.6);
+    }
+
+    // --- distant police siren drifting by every now and then
+    function siren() {
+      const now = ctx.currentTime;
+      const dur = 7;
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = 700;
+      const wail = ctx.createOscillator();
+      wail.frequency.value = 0.45;
+      const wailG = ctx.createGain();
+      wailG.gain.value = 130;
+      wail.connect(wailG); wailG.connect(o.frequency);
+      const sLP = ctx.createBiquadFilter();
+      sLP.type = 'lowpass';
+      sLP.frequency.value = 900;
+      const sg = ctx.createGain();
+      sg.gain.setValueAtTime(0.0001, now);
+      sg.gain.exponentialRampToValueAtTime(0.018, now + dur / 2);
+      sg.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      o.connect(sLP); sLP.connect(sg); sg.connect(master);
+      o.start(now); wail.start(now);
+      o.stop(now + dur); wail.stop(now + dur);
+    }
+    function scheduleSiren() {
+      setTimeout(() => {
+        if (ctx.state === 'running') siren();
+        scheduleSiren();
+      }, 18000 + Math.random() * 30000);
+    }
+    scheduleSiren();
+
+    return { ctx, master, thunder };
+  }
+  const soundBtn = document.getElementById('soundBtn');
+  soundBtn.addEventListener('click', () => {
+    if (!audio) {
+      audio = createAudio();
+      soundBtn.textContent = 'SON : ON';
+    } else if (audio.ctx.state === 'running') {
+      audio.ctx.suspend();
+      soundBtn.textContent = 'SON : OFF';
+    } else {
+      audio.ctx.resume();
+      soundBtn.textContent = 'SON : ON';
+    }
+  });
+
+  // ===============================================================
+  // Cinematic camera: automatic shot sequence
+  // ===============================================================
+  const SHOTS = [
+    { a: [175, 74, 175], b: [142, 58, 152], look: [0, 42, 0], dur: 13, name: 'PANORAMA' },
+    { a: [28, 5, 30], b: [16, 8, -26], look: [0, 55, 0], dur: 12, name: 'PLAZA' },
+    { a: [44, 84, 12], b: [-28, 90, 34], look: [0, 78, 0], dur: 12, name: 'HOLOGRAMME' },
+    { a: [12, 3.5, 62], b: [-12, 4.5, 56], look: [0, 9, -30], dur: 11, name: 'NIVEAU RUE' },
+    { a: [70, 235, 70], b: [-50, 245, 30], look: [0, 0, 0], dur: 13, name: 'VUE ORBITALE' },
+    { a: [104, 54, -8], b: [76, 50, 40], look: 'train', dur: 12, name: 'MONORAIL' },
+    { a: [60, 150, 100], b: [20, 140, 140], look: 'blimp', dur: 12, name: 'DIRIGEABLE' }
+  ];
+  let shotIdx = 0, shotT = 0, cine = true;
+  const shotLabel = document.getElementById('shotLabel');
+  shotLabel.textContent = '● ' + SHOTS[0].name;
+
+  // free-orbit fallback state
+  let camAngle = 0, camRadius = 150;
+  let dragX = 0, dragY = 0, targetDragX = 0, targetDragY = 0;
+  let targetFov = 58;
+  let dragging = false, px = 0, py = 0;
+
+  const el = renderer.domElement;
+  el.addEventListener('pointerdown', (e) => { dragging = true; px = e.clientX; py = e.clientY; });
+  addEventListener('pointerup', () => { dragging = false; });
+  addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    targetDragX += (e.clientX - px) * 0.004;
+    targetDragY = Math.max(-0.9, Math.min(0.9, targetDragY + (e.clientY - py) * 0.003));
+    px = e.clientX; py = e.clientY;
+  });
+  el.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (cine) targetFov = Math.max(32, Math.min(85, targetFov + e.deltaY * 0.03));
+    else camRadius = Math.max(22, Math.min(320, camRadius + e.deltaY * 0.12));
+  }, { passive: false });
+  addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      cine = !cine;
+      shotLabel.textContent = cine ? '● ' + SHOTS[shotIdx].name : '● CAMERA LIBRE';
+      e.preventDefault();
+    }
+    const num = parseInt((e.code.match(/Digit(\d)|Numpad(\d)/) || [])[1] || (e.code.match(/Numpad(\d)/) || [])[1]);
+    if (num >= 1 && num <= SHOTS.length) {
+      cine = true;
+      shotIdx = num - 1;
+      shotT = 0;
+      shotLabel.textContent = '● ' + SHOTS[shotIdx].name;
+    }
+  });
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  function smoothstep(k) { return k * k * (3 - 2 * k); }
+
+  // ===============================================================
+  // Main loop
+  // ===============================================================
+  const clock = new THREE.Clock();
+  let holoTimer = 0, policeTimer = 0, policeRed = true;
+  const lookTarget = new THREE.Vector3();
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+    const t = clock.elapsedTime;
+
+    // ---- train (updated before camera, the camera may track it)
+    trainAngle += TRAIN_SPEED * dt;
+    for (let wgn = 0; wgn < wagons.length; wgn++) {
+      const a = trainAngle - wgn * WAGON_GAP;
+      wagons[wgn].position.set(Math.cos(a) * TRAIN_R, TRAIN_H + 1.6, Math.sin(a) * TRAIN_R);
+      wagons[wgn].rotation.y = -a - Math.PI / 2;
+    }
+    trainHeadPos.copy(wagons[0].position);
+
+    // ---- blimp
+    blimpAngle += 0.045 * dt;
+    blimp.position.set(Math.cos(blimpAngle) * 130, 150 + Math.sin(t * 0.3) * 4, Math.sin(blimpAngle) * 130);
+    blimp.rotation.y = -blimpAngle - Math.PI / 2;
+
+    // ---- camera
+    dragX += (targetDragX - dragX) * 0.08;
+    dragY += (targetDragY - dragY) * 0.08;
+    camera.fov += (targetFov - camera.fov) * 0.06;
+    camera.updateProjectionMatrix();
+
+    if (cine) {
+      shotT += dt;
+      const s = SHOTS[shotIdx];
+      if (shotT > s.dur) {
+        shotT = 0;
+        shotIdx = (shotIdx + 1) % SHOTS.length;
+        shotLabel.textContent = '● ' + SHOTS[shotIdx].name;
+      }
+      const cur = SHOTS[shotIdx];
+      const k = smoothstep(Math.min(shotT / cur.dur, 1));
+      camera.position.set(
+        cur.a[0] + (cur.b[0] - cur.a[0]) * k + dragX * 14 + Math.sin(t * 0.7) * 0.5,
+        Math.max(2.5, cur.a[1] + (cur.b[1] - cur.a[1]) * k - dragY * 14 + Math.sin(t * 0.9) * 0.35),
+        cur.a[2] + (cur.b[2] - cur.a[2]) * k + Math.cos(t * 0.6) * 0.5
+      );
+      if (cur.look === 'train') lookTarget.copy(trainHeadPos);
+      else if (cur.look === 'blimp') lookTarget.copy(blimp.position);
+      else lookTarget.set(cur.look[0], cur.look[1], cur.look[2]);
+      camera.lookAt(lookTarget);
+    } else {
+      camAngle += dt * 0.07;
+      const a = camAngle + dragX;
+      camera.position.set(
+        Math.cos(a) * camRadius,
+        Math.max(3, 55 + Math.sin(t * 0.15) * 14 + dragY * 60),
+        Math.sin(a) * camRadius
+      );
+      camera.lookAt(0, 35 + dragY * -40, 0);
+    }
+
+    // ---- flying cars + police strobe
+    policeTimer += dt;
+    if (policeTimer > 0.25) { policeTimer = 0; policeRed = !policeRed; }
+    for (const c of cars) {
+      c.angle += c.speed * dt;
+      c.mesh.position.set(
+        Math.cos(c.angle) * c.radius,
+        c.height + Math.sin(t * 2 + c.bob) * 0.8,
+        Math.sin(c.angle) * c.radius
+      );
+      c.mesh.rotation.y = -c.angle - (c.speed > 0 ? 1 : -1) * Math.PI / 2;
+      if (c.isPolice) {
+        const col = policeRed ? 0xff2244 : 0x2266ff;
+        c.mesh.material.color.setHex(col);
+        c.halo.material.color.setHex(col);
+        c.trailMats.forEach((m) => m.color.setHex(col));
+      }
+    }
+
+    // ---- highway pulses
+    for (const p of pulses) {
+      p.angle += p.speed * dt;
+      p.sprite.position.set(Math.cos(p.angle) * p.r, p.h, Math.sin(p.angle) * p.r);
+    }
+
+    // ---- drones
+    for (const d of drones) {
+      d.g.position.x = d.base.x + Math.sin(t * d.f1 + d.ph) * 12;
+      d.g.position.y = d.base.y + Math.sin(t * d.f2 + d.ph * 2) * 5;
+      d.g.position.z = d.base.z + Math.cos(t * d.f1 + d.ph) * 12;
+      d.g.rotation.y += dt * 2;
+      d.light.material.opacity = Math.sin(t * 6 + d.ph) > 0 ? 0.95 : 0.25;
+    }
+
+    // ---- searchlights
+    for (const sl of searchlights) sl.pivot.rotation.y += sl.speed * dt;
+
+    // ---- hologram
+    holoOuter.rotation.y += dt * 0.4;
+    holoOuter.rotation.x += dt * 0.15;
+    holoInner.rotation.y -= dt * 0.7;
+    const pulse = 1 + Math.sin(t * 2.2) * 0.08;
+    holoGroup.scale.set(pulse, pulse, pulse);
+    holoOuter.material.opacity = 0.55 + Math.sin(t * 9) * 0.15 * Math.random();
+    beam.material.opacity = 0.06 + Math.sin(t * 1.4) * 0.03;
+    for (const ring of dataRings) {
+      ring.position.y += dt * 14;
+      if (ring.position.y > 150) ring.position.y = 0;
+      ring.material.opacity = 0.6 * (1 - ring.position.y / 150);
+    }
+
+    // ---- pedestrians
+    for (const p of peds) {
+      p.pos += p.speed * dt;
+      if (p.pos > 90) p.pos = -90;
+      if (p.pos < -90) p.pos = 90;
+      const bob = Math.abs(Math.sin(t * 6 + p.ph)) * 0.12;
+      if (p.horizontal) p.g.position.set(p.pos, bob, p.lane);
+      else p.g.position.set(p.lane, bob, p.pos);
+      p.g.rotation.y = (p.horizontal ? 0 : Math.PI / 2) + (p.speed > 0 ? 0 : Math.PI);
+    }
+
+    // ---- steam
+    for (const s of steamParticles) {
+      s.y += s.speed * dt;
+      if (s.y > 9) s.y = 0;
+      s.sprite.position.y = s.y;
+      const f = s.y / 9;
+      s.sprite.material.opacity = 0.22 * (1 - f);
+      s.sprite.scale.set(3 + f * 5, 3 + f * 5, 1);
+    }
+
+    // ---- taxi state machine
+    taxiT += dt;
+    const padTop = padB.h + 1.2;
+    if (taxiPhase === 0) {           // descend
+      const k = Math.min(taxiT / 6, 1);
+      taxi.position.set(padB.x, padTop + 60 * (1 - smoothstep(k)), padB.z);
+      taxi.rotation.y += dt * 0.5;
+      if (k >= 1) { taxiPhase = 1; taxiT = 0; }
+    } else if (taxiPhase === 1) {    // idle on pad
+      taxi.position.set(padB.x, padTop, padB.z);
+      if (taxiT > 4) { taxiPhase = 2; taxiT = 0; }
+    } else if (taxiPhase === 2) {    // ascend
+      const k = Math.min(taxiT / 6, 1);
+      taxi.position.set(padB.x, padTop + 60 * smoothstep(k), padB.z);
+      if (k >= 1) { taxiPhase = 3; taxiT = 0; }
+    } else {                          // cruise around the tower then return
+      const ca = taxiT * 0.5;
+      taxi.position.set(
+        padB.x + Math.cos(ca) * 26,
+        padTop + 60 + Math.sin(taxiT * 0.8) * 4,
+        padB.z + Math.sin(ca) * 26
+      );
+      taxi.rotation.y = -ca - Math.PI / 2;
+      if (taxiT > 12) { taxiPhase = 0; taxiT = 0; taxi.rotation.y = 0; }
+    }
+
+    // ---- pad ring blink
+    padRing.material.color.setHex(Math.sin(t * 4) > 0 ? 0xffe600 : 0x665500);
+
+    // ---- ground streaks
+    for (const s of streaks) {
+      s.pos += s.speed * dt;
+      if (s.pos > HALF * 1.1) s.pos = -HALF * 1.1;
+      if (s.pos < -HALF * 1.1) s.pos = HALF * 1.1;
+      if (s.horizontal) s.mesh.position.set(s.pos, 0.4, s.lane);
+      else s.mesh.position.set(s.lane, 0.4, s.pos);
+    }
+
+    // ---- rain
+    const rp = rainGeo.attributes.position.array;
+    for (let r = 0; r < RAIN_COUNT; r++) {
+      rp[r * 3 + 1] -= rainVel[r];
+      if (rp[r * 3 + 1] < 0) rp[r * 3 + 1] = 230;
+    }
+    rainGeo.attributes.position.needsUpdate = true;
+
+    // ---- smog
+    for (const s of smogs) {
+      s.sprite.position.x += s.speed * dt;
+      if (s.sprite.position.x > 220) s.sprite.position.x = -220;
+    }
+
+    // ---- beacons
+    for (const b of beacons) {
+      b.material.color.setHex(Math.sin(t * 3 + b.userData.blink) > 0 ? 0xff2244 : 0x330000);
+    }
+
+    // ---- neon sign flicker
+    for (const fs of flickerSigns) {
+      if (t > fs.next) {
+        const on = fs.mesh.material.opacity > 0.5;
+        fs.mesh.material.opacity = on ? 0.12 : 1;
+        fs.next = t + (on ? 0.04 + Math.random() * 0.15 : 1.5 + Math.random() * 5);
+      }
+    }
+
+    // ---- plaza lights
+    plazaLight1.intensity = 2.0 + Math.sin(t * 1.7) * 0.8;
+    plazaLight2.intensity = 2.0 + Math.cos(t * 1.3) * 0.8;
+
+    // ---- lightning + thunder
+    nextLightning -= dt;
+    if (nextLightning <= 0) {
+      flash = 1;
+      nextLightning = 6 + Math.random() * 12;
+      if (audio && audio.ctx.state === 'running') {
+        setTimeout(() => audio.thunder(), 300 + Math.random() * 1200);
+      }
+    }
+    if (flash > 0.01) {
+      flash *= Math.pow(0.02, dt * 3);
+      ambient.intensity = 1.4 + flash * 7;
+      scene.background.copy(bgNormal).lerp(bgFlash, flash);
+    } else {
+      ambient.intensity = 1.4;
+    }
+
+    // ---- holo billboards refresh (~12 fps for perf)
+    holoTimer += dt;
+    if (holoTimer > 0.08) {
+      holoTimer = 0;
+      for (const p of holoPanels) drawHolo(p, t);
+    }
+
+    renderer.render(scene, camera);
+  }
+  animate();
+})();
+</script>
+</body>
+</html>

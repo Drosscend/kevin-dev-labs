@@ -1,0 +1,1955 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>KEPLER-442c // ORBITAL SURVEY</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%231b4a66'/%3E%3Ccircle cx='8' cy='8' r='6' fill='none' stroke='%237fd6e8' stroke-width='0.8'/%3E%3C/svg%3E">
+<style>
+/* ============================================================
+   KEPLER-442c — orbital survey · single-file procedural planet
+   HUD / intro / controls styling. Rendering is WebGL2 (Three.js).
+   ============================================================ */
+:root{
+  --cy:#9adfee;          /* HUD cyan */
+  --cy-dim:#9adfee99;
+  --cy-faint:#9adfee2e;
+  --warn:#ffb37a;
+  --bg:#000;
+  --mono:ui-monospace,'Cascadia Code',Consolas,'SF Mono',Menlo,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg)}
+body{font-family:var(--mono);color:var(--cy);-webkit-font-smoothing:antialiased}
+canvas#view{position:fixed;inset:0;width:100vw;height:100vh;display:block;cursor:grab}
+canvas#view.dragging{cursor:grabbing}
+
+/* ---------- boot gate (also our user-gesture for WebAudio) ---------- */
+#gate{position:fixed;inset:0;background:#000;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:18px;z-index:50;
+  transition:opacity .9s ease}
+#gate.off{opacity:0;pointer-events:none}
+#gateBtn{font-family:var(--mono);font-size:14px;letter-spacing:.35em;text-indent:.35em;
+  color:var(--cy);background:transparent;border:1px solid var(--cy-dim);
+  padding:14px 26px;cursor:pointer;opacity:.25;pointer-events:none;
+  transition:opacity .6s ease, background .25s ease, box-shadow .25s ease}
+#gate.ready #gateBtn{opacity:1;pointer-events:auto;animation:pulse 2.6s ease-in-out infinite}
+#gateBtn:hover{background:#9adfee14;box-shadow:0 0 24px #9adfee33}
+#gateSub{font-size:10px;letter-spacing:.22em;color:var(--cy-dim);text-transform:uppercase}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 #9adfee00}50%{box-shadow:0 0 26px #9adfee2a}}
+
+/* ---------- intro title ---------- */
+#title{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  z-index:40;pointer-events:none;opacity:0;transition:opacity 1.4s ease}
+#title.on{opacity:1}
+#title span{font-size:clamp(15px,2.2vw,24px);letter-spacing:.55em;text-indent:.55em;
+  color:#cfeef7;text-shadow:0 0 18px #9adfee55,0 0 60px #9adfee22;white-space:nowrap}
+
+/* ---------- HUD panels ---------- */
+.panel{position:fixed;z-index:30;padding:14px 16px;font-size:11px;line-height:1.85;
+  letter-spacing:.14em;color:var(--cy);background:#02080dcc;
+  border:1px solid var(--cy-faint);backdrop-filter:blur(3px);
+  opacity:0;transform:translateY(6px);
+  transition:opacity .8s ease,transform .8s ease;user-select:none}
+.panel.on{opacity:1;transform:none}
+.panel::before,.panel::after{content:"";position:absolute;width:10px;height:10px;
+  border:1px solid var(--cy-dim)}
+.panel::before{top:-1px;left:-1px;border-right:none;border-bottom:none}
+.panel::after{bottom:-1px;right:-1px;border-left:none;border-top:none}
+#hud{top:18px;left:18px;min-width:248px}
+#hud h1{font-size:11px;font-weight:400;letter-spacing:.3em;color:#d8f2fa;
+  border-bottom:1px solid var(--cy-faint);padding-bottom:8px;margin-bottom:8px}
+#hud .row{display:flex;justify-content:space-between;gap:18px}
+#hud .row b{font-weight:400;color:#e6f7fc}
+#hud .sect{margin-top:9px;padding-top:7px;border-top:1px dashed var(--cy-faint);
+  color:var(--cy-dim);font-size:10px;letter-spacing:.26em}
+#hud .tag{color:var(--warn)}
+.sliderRow{display:flex;align-items:center;gap:10px;margin-top:2px}
+.sliderRow label{flex:0 0 58px;color:var(--cy-dim);font-size:10px;letter-spacing:.18em}
+.sliderRow output{flex:0 0 76px;text-align:right;color:#e6f7fc;font-size:10px}
+input[type=range]{flex:1;appearance:none;-webkit-appearance:none;height:14px;background:transparent;cursor:pointer}
+input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--cy-faint)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:9px;height:9px;
+  margin-top:-3.5px;background:var(--cy);border-radius:0;box-shadow:0 0 8px #9adfee88}
+input[type=range]::-moz-range-track{height:2px;background:var(--cy-faint)}
+input[type=range]::-moz-range-thumb{width:9px;height:9px;background:var(--cy);border:none;border-radius:0}
+
+#ctrl{bottom:18px;right:18px;min-width:236px}
+#ctrl .btns{display:flex;gap:8px;margin-top:8px}
+.hbtn{flex:1;font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-indent:.22em;
+  color:var(--cy);background:transparent;border:1px solid var(--cy-faint);
+  padding:7px 0;cursor:pointer;transition:background .2s,border-color .2s}
+.hbtn:hover{background:#9adfee12;border-color:var(--cy-dim)}
+.hbtn.active{color:var(--warn);border-color:#ffb37a55}
+
+#meta{bottom:18px;left:18px;font-size:9px;letter-spacing:.2em;color:var(--cy-dim);
+  background:transparent;border:none;padding:0}
+#meta::before,#meta::after{display:none}
+#meta b{color:var(--cy);font-weight:400}
+
+/* ---------- error card ---------- */
+#err{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;background:#000}
+#err.on{display:flex}
+#err .card{max-width:520px;margin:20px;padding:26px 30px;border:1px solid #ff7a6a55;
+  background:#0d0405;color:#ffc9bf;font-size:12px;line-height:1.9;letter-spacing:.06em}
+#err .card h2{font-size:13px;font-weight:400;letter-spacing:.3em;color:#ff9d8a;margin-bottom:12px}
+#err .card p{margin-bottom:10px}
+#err .card .hint{color:#ffc9bf99;font-size:11px}
+#err .card button{margin-top:14px;font-family:var(--mono);font-size:11px;letter-spacing:.2em;
+  color:#ffc9bf;background:transparent;border:1px solid #ff7a6a55;padding:8px 18px;cursor:pointer}
+@media (max-width:760px){#hud{min-width:0;right:18px}#meta{display:none}}
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="gate">
+  <button id="gateBtn" type="button">[ INITIATE ORBITAL SURVEY ]</button>
+  <div id="gateSub">calibrating sensors…</div>
+</div>
+
+<div id="title"><span>KEPLER-442c&ensp;//&ensp;ORBITAL SURVEY</span></div>
+
+<div id="hud" class="panel">
+  <h1>KEPLER-442c // SURVEY</h1>
+  <div class="row"><span>ALT</span><b id="hAlt">—</b></div>
+  <div class="row"><span>LOCAL TIME</span><b id="hTime">—</b></div>
+  <div class="row"><span>SUBPOINT</span><b id="hLatLon">—</b></div>
+  <div class="row"><span>STATE</span><b id="hTag" class="tag">—</b></div>
+  <div class="sect">PLANET PARAMETERS</div>
+  <div class="sliderRow"><label>RADIUS</label><input id="sRadius" type="range" min="4000" max="9000" step="10" value="6371"><output id="oRadius">6371 KM</output></div>
+  <div class="sliderRow"><label>ATMOS</label><input id="sAtmo" type="range" min="20" max="300" step="1" value="100"><output id="oAtmo">1.00 BAR</output></div>
+</div>
+
+<div id="ctrl" class="panel">
+  <div class="sliderRow"><label>ROT SPEED</label><input id="sSpeed" type="range" min="0" max="200" step="1" value="100"><output id="oSpeed">1.00×</output></div>
+  <div class="btns">
+    <button id="bPause" class="hbtn" type="button">❚❚ PAUSE</button>
+    <button id="bMute"  class="hbtn" type="button">♪ AUDIO</button>
+  </div>
+</div>
+
+<div id="meta" class="panel"><b>drag</b> orbit&ensp;·&ensp;<b>wheel</b> altitude&ensp;·&ensp;<b>space</b> pause&ensp;·&ensp;<span id="mFps"></span></div>
+
+<div id="err"><div class="card">
+  <h2>// SIGNAL LOST</h2>
+  <p id="errMsg">Unknown failure.</p>
+  <p class="hint" id="errHint"></p>
+  <button onclick="location.reload()">RETRY UPLINK</button>
+</div></div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+/* =====================================================================
+   KEPLER-442c — single-file procedural planet renderer.
+
+   Pipeline (all HDR, linear, RGBA16F):
+     1. scene pass    : sky/stars/sun  + planet surface + moon (opaque,
+                        writes depth) + cloud shell + aurora (blended)
+     2. atmosphere    : full-screen ray march (Rayleigh+Mie+ozone single
+                        scattering, precomputed transmittance LUT),
+                        depth-aware so the moon can transit in front
+     3. bloom         : threshold + 5-level mip chain (down/up tent)
+     4. final         : lens flare, chromatic aberration, ACES, grain,
+                        vignette, sRGB encode
+   Modules: GLSL library / Atmosphere / Surface / Clouds / Aurora /
+            Moon / Sky / Post / CameraRig / HUD / Audio / Intro / Loop
+   ===================================================================== */
+'use strict';
+
+const $ = s => document.querySelector(s);
+let booted = false;
+
+/**
+ * Show the fatal error card (WebGL2 missing, CDN unreachable, GPU lost…).
+ * @param {string} msg  - main human-readable message
+ * @param {string} hint - secondary advice line
+ */
+function fatal(msg, hint = '') {
+  const e = $('#err');
+  $('#errMsg').textContent = msg;
+  $('#errHint').textContent = hint;
+  e.classList.add('on');
+  $('#gate').classList.add('off');
+}
+window.addEventListener('error', ev => {
+  if (!booted) fatal('Runtime fault during initialisation: ' + (ev.message || 'unknown error.'),
+    'Open the developer console for details.');
+});
+
+/* ---------- capability gate: WebGL2 is required, no degraded mode ---------- */
+const probe = document.createElement('canvas').getContext('webgl2');
+if (!probe) {
+  fatal('This survey requires WebGL2, which this browser or GPU configuration does not provide.',
+    'Enable hardware acceleration, update GPU drivers, or use a recent Chrome / Edge / Firefox.');
+  throw new Error('WebGL2 unavailable');
+}
+if (!probe.getExtension('EXT_color_buffer_float')) {
+  fatal('Floating-point render targets (EXT_color_buffer_float) are unavailable.',
+    'The HDR pipeline cannot run. Update GPU drivers or disable software rendering.');
+  throw new Error('EXT_color_buffer_float unavailable');
+}
+
+let THREE;
+try { THREE = await import('three'); }
+catch (e) {
+  fatal('Could not load Three.js from the CDN. An internet connection is required on first view.',
+    'jsdelivr.net seems unreachable. Check connectivity and retry.');
+  throw e;
+}
+
+/* ---------- small math helpers ---------- */
+const clamp = (x, a, b) => x < a ? a : (x > b ? b : x);
+const lerp = (a, b, t) => a + (b - a) * t;
+/** Frame-rate independent exponential smoothing. */
+const damp = (a, b, k, dt) => lerp(a, b, 1 - Math.exp(-k * dt));
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const TAU = Math.PI * 2;
+
+/* ---------- global configuration (units: Mm = 1000 km) ---------- */
+const CFG = {
+  RP0: 6.371,            // default planet radius [Mm]
+  ATM_H: 0.100,          // atmosphere shell thickness [Mm]
+  CLOUD_H: 1.0045,       // cloud shell radius, in planet radii
+  AUR_R0: 1.012, AUR_R1: 1.052, // aurora shell, in planet radii
+  MOON_R: 1.74,          // moon radius [Mm]
+  MOON_ORBIT: 46.0,      // moon orbit radius [Mm]
+  MOON_PERIOD: 420,      // moon orbit period [sim s]
+  MOON_INCL: 0.07,       // orbit inclination [rad]
+  DAY_LENGTH: 150,       // planet rotation period [sim s] at 1.0×
+  TILT: 0.31,            // axial tilt [rad]
+  ALT_MIN: 0.16, ALT_MAX: 60.0, // camera altitude range [Mm]
+  FOV: 52,
+  SEED: 7.31,            // master seed offset for all noise fields
+  SUN_DIR: [1, 0, 0],    // world-space sun direction (fixed; planet spins)
+  SUN_COL: [1.0, 0.894, 0.768], // K-type star tint (Kepler-442 is a K dwarf)
+};
+
+/* mutable simulation state */
+const state = {
+  simT: 0,            // simulation seconds (pausable, speed-scaled)
+  speed: 1.0,         // rotation-speed multiplier
+  paused: false,
+  exposure: 1.0,      // current exposure (auto-adapted)
+  expTarget: 1.0,
+  radiusKm: 6371,
+  atmoDensity: 1.0,   // scattering coefficient multiplier ("bar")
+  introDone: false,
+  audioOn: false,
+  quality: { scale: 1.0, atmoSteps: 24, ema: 16.6, frames: 0 },
+};
+/* =====================================================================
+   MODULE: GLSL library — chunks shared by several shaders
+   ===================================================================== */
+
+/** Simplex noise (Ashima / Ian McEwan, public-domain) + fbm helpers. */
+const GLSL_NOISE = /* glsl */`
+const float PI  = 3.14159265359;
+const float TAU = 6.28318530718;
+
+vec3 mod289(vec3 x){ return x - floor(x * (1.0/289.0)) * 289.0; }
+vec4 mod289(vec4 x){ return x - floor(x * (1.0/289.0)) * 289.0; }
+vec4 permute(vec4 x){ return mod289(((x*34.0)+1.0)*x); }
+vec4 taylorInvSqrt(vec4 r){ return 1.79284291400159 - 0.85373472095314 * r; }
+
+float snoise(vec3 v){
+  const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+  const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+  vec3 i  = floor(v + dot(v, C.yyy));
+  vec3 x0 = v - i + dot(i, C.xxx);
+  vec3 g  = step(x0.yzx, x0.xyz);
+  vec3 l  = 1.0 - g;
+  vec3 i1 = min(g.xyz, l.zxy);
+  vec3 i2 = max(g.xyz, l.zxy);
+  vec3 x1 = x0 - i1 + C.xxx;
+  vec3 x2 = x0 - i2 + C.yyy;
+  vec3 x3 = x0 - D.yyy;
+  i = mod289(i);
+  vec4 p = permute(permute(permute(
+            i.z + vec4(0.0, i1.z, i2.z, 1.0))
+          + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+          + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+  float n_ = 0.142857142857;
+  vec3 ns = n_ * D.wyz - D.xzx;
+  vec4 j  = p - 49.0 * floor(p * ns.z * ns.z);
+  vec4 x_ = floor(j * ns.z);
+  vec4 y_ = floor(j - 7.0 * x_);
+  vec4 x  = x_ * ns.x + ns.yyyy;
+  vec4 y  = y_ * ns.x + ns.yyyy;
+  vec4 h  = 1.0 - abs(x) - abs(y);
+  vec4 b0 = vec4(x.xy, y.xy);
+  vec4 b1 = vec4(x.zw, y.zw);
+  vec4 s0 = floor(b0)*2.0 + 1.0;
+  vec4 s1 = floor(b1)*2.0 + 1.0;
+  vec4 sh = -step(h, vec4(0.0));
+  vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+  vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+  vec3 p0 = vec3(a0.xy, h.x);
+  vec3 p1 = vec3(a0.zw, h.y);
+  vec3 p2 = vec3(a1.xy, h.z);
+  vec3 p3 = vec3(a1.zw, h.w);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+  vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+  m = m * m;
+  return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+}
+
+/* cheap stable hashes (Dave Hoskins) */
+float hash13(vec3 p3){ p3 = fract(p3 * 0.1031); p3 += dot(p3, p3.zyx + 31.32); return fract((p3.x + p3.y) * p3.z); }
+vec3  hash33(vec3 p3){ p3 = fract(p3 * vec3(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yxz + 33.33); return fract((p3.xxy + p3.yxx) * p3.zyx); }
+
+/* octave decorrelation rotation */
+const mat3 FBM_ROT = mat3( 0.00,  0.80,  0.60,
+                          -0.80,  0.36, -0.48,
+                          -0.60, -0.48,  0.64);
+
+/** Standard fractal Brownian motion, |result| roughly in [-1,1]. */
+float fbm(vec3 p, int oct){
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 8; i++){
+    if (i >= oct) break;
+    s += a * snoise(p);
+    p = FBM_ROT * p * 2.04 + 11.5;
+    a *= 0.5;
+  }
+  return s;
+}
+
+/** Ridged fbm in [0,1] — sharp crests for mountain chains. */
+float ridged(vec3 p, int oct){
+  float s = 0.0, a = 0.55, w = 1.0;
+  for (int i = 0; i < 8; i++){
+    if (i >= oct) break;
+    float n = 1.0 - abs(snoise(p));
+    n *= n * w;
+    w = clamp(n * 1.6, 0.0, 1.0);
+    s += a * n;
+    p = FBM_ROT * p * 2.13 + 7.7;
+    a *= 0.52;
+  }
+  return s;
+}
+`;
+
+/**
+ * Physical atmosphere constants + density / phase / ray helpers.
+ * Units: megametres. Coefficients are Earth-like (Bruneton 2017),
+ * scaled by uAtmoDensity (the HUD "ATMOS" slider).
+ */
+const GLSL_ATM = /* glsl */`
+uniform float uRp;          /* planet radius   [Mm] */
+uniform float uRa;          /* atmosphere top  [Mm] */
+uniform float uAtmoDensity; /* scattering multiplier */
+
+const vec3  BETA_R  = vec3(5.802, 13.558, 33.100); /* Rayleigh scatter /Mm */
+const float BETA_MS = 3.996;                        /* Mie scatter     /Mm */
+const float BETA_ME = 4.440;                        /* Mie extinction  /Mm */
+const vec3  BETA_O  = vec3(0.650, 1.881, 0.085);    /* ozone absorb    /Mm */
+const float H_R = 0.0085, H_M = 0.0012;             /* scale heights   [Mm] */
+const float MIE_G = 0.78;
+
+/** Ray vs sphere centred at origin. Returns (tNear, tFar); miss => y < x. */
+vec2 raySphere(vec3 ro, vec3 rd, float r){
+  float b = dot(ro, rd);
+  float c = dot(ro, ro) - r * r;
+  float h = b * b - c;
+  if (h < 0.0) return vec2(1e9, -1e9);
+  h = sqrt(h);
+  return vec2(-b - h, -b + h);
+}
+
+float phaseR(float c){ return 0.05968310365 * (1.0 + c * c); }           /* 3/(16pi)(1+c^2) */
+float phaseM(float c){
+  float g2 = MIE_G * MIE_G;
+  return 0.11936620731 * (1.0 - g2) * (1.0 + c * c)
+       / ((2.0 + g2) * pow(1.0 + g2 - 2.0 * MIE_G * c, 1.5));            /* Cornette-Shanks */
+}
+
+/** Ozone tent profile peaking ~25 km. */
+float ozoneDens(float h){ return max(0.0, 1.0 - abs(h - 0.025) / 0.015); }
+
+/** Rayleigh / Mie / ozone densities at altitude h [Mm]. */
+vec3 atmDens(float h){
+  return vec3(exp(-max(h, 0.0) / H_R), exp(-max(h, 0.0) / H_M), ozoneDens(h));
+}
+/** Extinction coefficient at altitude h. */
+vec3 atmExtinction(float h){
+  vec3 d = atmDens(h);
+  return (BETA_R * d.x + vec3(BETA_ME) * d.y + BETA_O * d.z) * uAtmoDensity;
+}
+`;
+
+/** Transmittance-LUT sampler (LUT layout: u = sun cos-zenith, v = sqrt(h)). */
+const GLSL_LUT = /* glsl */`
+uniform sampler2D uLut;
+vec3 lutT(float h, float mu){
+  vec2 uv = vec2((mu + 0.45) / 1.45, sqrt(clamp(h / (uRa - uRp), 0.0, 1.0)));
+  return texture(uLut, clamp(uv, 0.001, 0.999)).rgb;
+}
+`;
+
+/**
+ * Shared animated cloud-coverage field, sampled both by the cloud shell
+ * (5 octaves) and by the surface shader for soft shadows (3 octaves).
+ * `d` is a unit direction in CLOUD object space. Includes jet-stream
+ * domain warp, an ITCZ equatorial band and three procedural cyclones.
+ */
+const GLSL_CLOUDS = /* glsl */`
+const vec3 CYC_C0 = normalize(vec3( 0.62,  0.34,  0.71));
+const vec3 CYC_C1 = normalize(vec3(-0.78, -0.26,  0.57));
+const vec3 CYC_C2 = normalize(vec3( 0.15, -0.52, -0.84));
+
+/* rotate v around unit axis a by angle t (Rodrigues) */
+vec3 rotAxis(vec3 v, vec3 a, float t){
+  float c = cos(t), s = sin(t);
+  return v * c + cross(a, v) * s + a * dot(a, v) * (1.0 - c);
+}
+vec3 cyclone(vec3 d, vec3 c, float radius, float spin, float t){
+  float ang = acos(clamp(dot(d, c), -1.0, 1.0));
+  float w = exp(-pow(ang / radius, 2.0));
+  return rotAxis(d, c, w * (spin + t * 0.02));
+}
+
+float cloudField(vec3 d, float t, float cover, int oct){
+  /* slow planetary churn + three cyclones */
+  vec3 p = cyclone(d, CYC_C0, 0.16, 2.4, t);
+  p = cyclone(p, CYC_C1, 0.21, -1.9, t);
+  p = cyclone(p, CYC_C2, 0.12, 2.9, t);
+  /* zonal jet-stream shear: longitude drift increasing with |latitude| */
+  float shear = p.y * p.y * 1.3;
+  p = rotAxis(p, vec3(0.0, 1.0, 0.0), shear + t * 0.004);
+  /* domain warp for billowy fronts */
+  vec3 w = vec3(snoise(p * 1.9 + t * 0.013),
+                snoise(p * 1.9 + 7.31 - t * 0.011),
+                snoise(p * 1.9 + 3.77)) * 0.42;
+  float f = fbm(p * 2.6 + w + vec3(t * 0.006, 0.0, 0.0), oct);
+  /* equatorial ITCZ band + mid-latitude storm tracks */
+  float bands = 0.16 * exp(-pow(p.y / 0.09, 2.0))
+              + 0.10 * exp(-pow((abs(p.y) - 0.62) / 0.16, 2.0));
+  float c = cover + bands;
+  return smoothstep(1.0 - c, 1.0 - c + 0.38, f * 0.5 + 0.5);
+}
+`;
+
+/** Shared fullscreen-triangle vertex shader (clip-space passthrough). */
+const VS_FULL = /* glsl */`
+out vec2 vUv;
+void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+`;
+
+/* =====================================================================
+   MODULE: precompute shaders (run once / on slider change)
+   ===================================================================== */
+
+/**
+ * Transmittance LUT bake: exp(-optical depth) from a point at altitude h
+ * toward the sun at cos-zenith mu, marched to the top of the atmosphere.
+ * Rays geometrically blocked by the planet bake to ~0 (night).
+ */
+const FS_LUT = /* glsl */`
+precision highp float;
+in vec2 vUv; out vec4 oC;
+${GLSL_ATM}
+void main(){
+  float mu = vUv.x * 1.45 - 0.45;
+  float h  = vUv.y * vUv.y * (uRa - uRp);
+  vec3 ro = vec3(0.0, uRp + h + 1e-5, 0.0);
+  vec3 rd = vec3(sqrt(max(0.0, 1.0 - mu * mu)), mu, 0.0);
+  vec2 ga = raySphere(ro, rd, uRp);
+  float tEnd = (ga.x > 0.0) ? ga.x : raySphere(ro, rd, uRa).y;
+  const int N = 64;
+  float ds = tEnd / float(N);
+  vec3 tau = vec3(0.0);
+  for (int i = 0; i < N; i++){
+    vec3 p = ro + rd * ((float(i) + 0.5) * ds);
+    tau += atmExtinction(length(p) - uRp) * ds;
+  }
+  vec3 T = exp(-tau);
+  if (ga.x > 0.0) T = vec3(0.0);   /* sun below the geometric horizon */
+  oC = vec4(T, 1.0);
+}
+`;
+
+/**
+ * Surface field bake (equirect 4096×2048, RGBA16F):
+ *   R = height (0.5 = sea level)  G = moisture
+ *   B = city-light density        A = temperature jitter
+ * Heavy domain-warped fbm runs once here, not per frame.
+ */
+const FS_SURFBAKE = /* glsl */`
+precision highp float;
+in vec2 vUv; out vec4 oC;
+uniform float uSeed;
+${GLSL_NOISE}
+void main(){
+  float lon = (vUv.x - 0.5) * TAU;
+  float lat = (vUv.y - 0.5) * PI;
+  vec3 d  = vec3(cos(lat) * cos(lon), sin(lat), cos(lat) * sin(lon));
+  vec3 sd = d * 1.0 + vec3(uSeed, uSeed * 1.7, -uSeed * 0.6);
+
+  /* --- continents: domain-warped fbm + very-low-frequency landmass bias --- */
+  vec3 w = vec3(fbm(sd * 1.30 + 11.7, 4),
+                fbm(sd * 1.30 + 23.4, 4),
+                fbm(sd * 1.30 + 37.9, 4)) * 0.55;
+  float cont = fbm(sd * 1.35 + w, 6) + 0.42 * fbm(sd * 0.55 + 3.1, 3);
+  float h = cont - 0.052;                       /* sea level at h = 0 */
+  h = sign(h) * pow(abs(h), 0.82);              /* crisper coastlines  */
+
+  /* mountains: ridged chains restricted to continental interiors */
+  float interior = smoothstep(0.05, 0.28, h);
+  float ridge = ridged(sd * 3.1 + w * 1.4, 5);
+  h += ridge * ridge * interior * 0.50;
+
+  /* rivers: thin winding valleys across lowlands (visual + city seeds) */
+  float rv = pow(smoothstep(0.955, 1.0, 1.0 - abs(snoise(sd * 4.6 + w * 2.0))), 1.4)
+           * smoothstep(0.45, 0.05, h) * step(0.003, h);
+  h -= rv * 0.05;
+
+  /* moisture: wet tropics / continental interiors drier / river corridors */
+  float moist = 0.5 + 0.5 * fbm(sd * 2.2 + 71.3, 4);
+  moist += 0.22 * exp(-pow(lat / 0.30, 2.0));          /* tropical belt  */
+  moist = clamp(moist + rv * 0.55 - interior * 0.18, 0.0, 1.0);
+
+  float tj = fbm(sd * 3.7 + 51.7, 3);
+
+  /* --- city-light density: coastal lowlands × hub clusters × climate --- */
+  float lowland = smoothstep(0.0, 0.010, h) * smoothstep(0.17, 0.03, h);
+  float hubs = pow(0.5 + 0.5 * fbm(sd * 1.9 + 91.2, 3), 3.2);
+  float climate = smoothstep(0.12, 0.45, moist)
+                * (0.30 + 0.70 * smoothstep(1.35, 0.85, abs(lat)));
+  float city = clamp(lowland * 1.3 + rv * 0.9, 0.0, 1.0) * hubs * climate;
+  city = pow(clamp(city * 2.1, 0.0, 1.0), 1.55);
+
+  oC = vec4(h * 0.5 + 0.5, moist, city, tj * 0.5 + 0.5);
+}
+`;
+/* =====================================================================
+   MODULE: sky — starfield, milky way, HDR sun disc
+   (drawn after opaque geometry at far depth; atmosphere extinction is
+   applied later by the atmosphere pass, which is what reddens the sun
+   when it grazes the limb)
+   ===================================================================== */
+const VS_SKY = /* glsl */`
+out vec3 vDir;
+void main(){
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vDir = wp.xyz - cameraPosition;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  gl_Position.z = gl_Position.w * 0.999999;   /* pin to the far plane */
+}
+`;
+const FS_SKY = /* glsl */`
+precision highp float;
+in vec3 vDir; out vec4 oC;
+uniform vec3 uSunDirW;
+uniform vec3 uSunCol;
+${GLSL_NOISE}
+
+/* one star per cell, jittered, kept away from cell borders */
+vec3 starLayer(vec3 d, float cells, float gain){
+  vec3 p = d * cells;
+  vec3 ip = floor(p), fp = fract(p);
+  vec3 r = hash33(ip);
+  vec3 sp = 0.18 + 0.64 * r;
+  float dist = length(fp - sp);
+  float m = hash13(ip + 17.31);
+  float fw = fwidth(dist) * 1.4 + 1e-4;
+  float rad = 0.026 + 0.06 * m * m;
+  float spot = smoothstep(rad + fw, max(rad - fw, 0.0), dist);
+  float b = pow(m, 11.0) * gain;
+  vec3 tint = mix(vec3(1.0, 0.74, 0.52), vec3(0.66, 0.76, 1.0), hash13(ip + 3.7));
+  return spot * b * mix(tint, vec3(1.0), 0.45);
+}
+
+void main(){
+  vec3 d = normalize(vDir);
+
+  /* ---- stars: three angular scales ---- */
+  vec3 col = starLayer(d, 23.0, 3.2)
+           + starLayer(d, 61.0, 1.5)
+           + starLayer(d, 153.0, 0.7);
+
+  /* ---- milky way band ---- */
+  const vec3 MW_N = normalize(vec3(0.36, 0.74, 0.57));
+  const vec3 MW_T = normalize(cross(MW_N, vec3(0.0, 1.0, 0.0)));
+  vec3 MW_B = cross(MW_N, MW_T);
+  vec3 g = vec3(dot(d, MW_T), dot(d, MW_N), dot(d, MW_B));
+  float band = exp(-g.y * g.y / 0.035);
+  float coreF = exp(-pow(acos(clamp(g.z, -1.0, 1.0)) / 1.25, 2.0));
+  vec3 gp = vec3(g.x, g.y * 4.0, g.z) * 3.0;
+  float neb = 0.5 + 0.5 * fbm(gp + 4.2, 4);
+  float dust = ridged(gp * 1.7 + 9.0, 4);
+  float mw = band * (0.22 + 0.78 * neb) * (1.0 - 0.78 * smoothstep(0.30, 0.75, dust * band));
+  col += mw * mix(vec3(0.50, 0.62, 1.00), vec3(1.00, 0.82, 0.62), coreF)
+       * (0.10 + 0.42 * coreF);
+  col += band * starLayer(d, 290.0, 1.6);     /* dense faint stars in the band */
+
+  /* ---- HDR sun disc + tight corona (K-type warm white) ---- */
+  float cs = dot(d, uSunDirW);
+  float disc = smoothstep(0.9999825, 0.9999920, cs);
+  float glow = pow(max(cs, 0.0), 3500.0) * 9.0 + pow(max(cs, 0.0), 120.0) * 0.30;
+  col += uSunCol * (disc * 1600.0 + glow);
+
+  oC = vec4(col, 1.0);
+}
+`;
+
+/* =====================================================================
+   MODULE: planet surface
+   Reads the baked field texture, adds real-time detail octaves, biome
+   colour grading, ocean sun glint, cloud shadows, moon eclipse shadow
+   and procedural night-side city lights.
+   ===================================================================== */
+const VS_SURF = /* glsl */`
+out vec3 vObj;
+void main(){
+  vObj = position;                                  /* unit sphere */
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+const FS_SURF = /* glsl */`
+precision highp float;
+in vec3 vObj; out vec4 oC;
+uniform sampler2D uSurf;
+uniform vec3  uSunObj;       /* sun dir, planet object space        */
+uniform vec3  uCamObj;       /* camera pos, unit-sphere obj space   */
+uniform vec3  uSunSurf;      /* sun irradiance for the surface      */
+uniform vec3  uMoonObj;      /* moon pos, unit-sphere obj space     */
+uniform float uMoonRu;       /* moon radius / planet radius         */
+uniform float uSimT;
+uniform float uCloudPhase;   /* cloud-shell spin minus planet spin  */
+uniform float uCloudCover;
+uniform float uCityGain;
+${GLSL_NOISE}
+${GLSL_ATM}
+${GLSL_LUT}
+${GLSL_CLOUDS}
+
+vec3 rotY(vec3 v, float a){
+  float c = cos(a), s = sin(a);
+  return vec3(c * v.x + s * v.z, v.y, -s * v.x + c * v.z);
+}
+vec2 dirToUv(vec3 d){
+  return vec2(atan(d.z, d.x) / TAU + 0.5, asin(clamp(d.y, -1.0, 1.0)) / PI + 0.5);
+}
+
+/* soft shadow cast by the cloud shell (3-octave match of the cloud pass) */
+float cloudShadow(vec3 p, vec3 L){
+  float mu = dot(p, L);
+  if (mu < -0.05) return 1.0;
+  float b = dot(p, L);
+  float t = -b + sqrt(max(0.0, b * b - (dot(p, p) - 1.0045 * 1.0045)));
+  vec3 q = rotY(normalize(p + L * t), uCloudPhase);
+  float dcl = cloudField(q, uSimT, uCloudCover, 3);
+  return 1.0 - 0.62 * dcl * smoothstep(-0.02, 0.12, mu);
+}
+
+/* analytic penumbra when the moon crosses the sun disc (solar eclipse) */
+float moonEclipse(vec3 p, vec3 L){
+  vec3 toM = uMoonObj - p;
+  float dm = length(toM);
+  float sep = acos(clamp(dot(toM / dm, L), -1.0, 1.0));
+  float am = asin(clamp(uMoonRu / dm, 0.0, 1.0));
+  const float as = 0.0047;
+  float cover = smoothstep(am + as, max(am - as, 0.0), sep)
+              * min(1.0, (am * am) / (as * as));
+  return 1.0 - 0.92 * clamp(cover, 0.0, 1.0);
+}
+
+void main(){
+  vec3 n = normalize(vObj);
+
+  /* equirect sampling with analytic UV gradients (kills the atan seam) */
+  vec3 ddx = dFdx(n), ddy = dFdy(n);
+  float ix = 1.0 / (TAU * max(1e-7, n.x * n.x + n.z * n.z));
+  float iy = 1.0 / (PI * max(2e-3, sqrt(max(0.0, 1.0 - n.y * n.y))));
+  vec2 gx = vec2((n.x * ddx.z - n.z * ddx.x) * ix, ddx.y * iy);
+  vec2 gy = vec2((n.x * ddy.z - n.z * ddy.x) * ix, ddy.y * iy);
+  #define SURF(dir) textureGrad(uSurf, dirToUv(dir), gx, gy)
+
+  vec4 S = SURF(n);
+  float h = S.r * 2.0 - 1.0;                 /* signed height, sea = 0 */
+  float water = smoothstep(0.0015, -0.0015, h);
+
+  /* ---- real-time detail octaves + bump normal from height gradient ---- */
+  float dn = fbm(n * 150.0, 3);
+  vec3 upv = abs(n.y) > 0.93 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+  vec3 tn = normalize(cross(upv, n));
+  vec3 bn = cross(n, tn);
+  const float e = 0.0026;
+  float hC = S.r + dn * 0.012;
+  vec3 nT = normalize(n + tn * e);
+  vec3 nB = normalize(n + bn * e);
+  float hT = SURF(nT).r + fbm(nT * 150.0, 3) * 0.012;
+  float hB = SURF(nB).r + fbm(nB * 150.0, 3) * 0.012;
+  float gT = (hT - hC) / e, gB = (hB - hC) / e;
+  float land = 1.0 - water;
+  vec3 N = normalize(n - (tn * gT + bn * gB) * 0.38 * land);
+
+  /* ocean micro-ripple so the glint shimmers */
+  float r1 = snoise(n * 540.0 + uSimT * 0.015);
+  float r2 = snoise(n * 540.0 + 31.7 - uSimT * 0.012);
+  N = normalize(mix(N, normalize(n + (tn * r1 + bn * r2) * 0.004), water));
+
+  /* ---- biome colour grading ---- */
+  float lat = asin(clamp(n.y, -1.0, 1.0));
+  float T = cos(lat * 1.15) - max(h, 0.0) * 1.5 + (S.a * 2.0 - 1.0) * 0.16 + 0.04;
+  float m = S.g;
+  float slope = clamp(length(vec2(gT, gB)) * 0.5, 0.0, 1.0);
+
+  vec3 sand   = vec3(0.470, 0.360, 0.215);
+  vec3 steppe = vec3(0.295, 0.275, 0.150);
+  vec3 veg    = vec3(0.052, 0.140, 0.088);   /* slightly teal-shifted flora */
+  vec3 rock   = vec3(0.255, 0.225, 0.200);
+  vec3 tundra = vec3(0.310, 0.275, 0.220);
+  vec3 snow   = vec3(0.870, 0.895, 0.950);
+
+  vec3 landC = mix(sand, steppe, smoothstep(0.18, 0.42, m));
+  landC = mix(landC, veg, smoothstep(0.40, 0.66, m));
+  landC = mix(landC, rock, smoothstep(0.30, 0.58, h * 1.25 + slope * 0.55));
+  landC = mix(tundra, landC, smoothstep(0.16, 0.38, T));
+  float snowM = smoothstep(0.15, 0.03, T)
+              + smoothstep(0.46, 0.72, h) * smoothstep(0.45, 0.20, T);
+  landC = mix(landC, snow, clamp(snowM, 0.0, 1.0));
+  landC *= 0.90 + dn * 0.22;                 /* high-frequency tonal breakup */
+
+  vec3 deepC  = vec3(0.012, 0.052, 0.105);
+  vec3 shoalC = vec3(0.055, 0.290, 0.330);
+  vec3 waterC = mix(deepC, shoalC, smoothstep(-0.07, -0.002, h));
+  float iceM = smoothstep(0.10, 0.015, T + snoise(n * 55.0) * 0.035);
+  waterC = mix(waterC, vec3(0.78, 0.835, 0.90), iceM);
+
+  vec3 albedo = mix(landC, waterC, water);
+
+  /* ---- lighting ---- */
+  vec3 L = uSunObj;
+  vec3 V = normalize(uCamObj - n);
+  float mu0 = dot(n, L);
+  vec3 sunT = lutT(0.0, mu0);                /* terminator reddening */
+  float shadow = cloudShadow(n, L) * moonEclipse(n, L);
+  vec3 direct = uSunSurf * sunT * shadow;
+  vec3 amb = vec3(0.040, 0.066, 0.110) * uAtmoDensity * smoothstep(-0.08, 0.40, mu0)
+           + vec3(0.0009, 0.0012, 0.0019);
+  vec3 Md = normalize(uMoonObj - n);
+  amb += max(dot(N, Md), 0.0) * vec3(0.0014, 0.0017, 0.0023) * smoothstep(0.05, -0.20, mu0);
+
+  vec3 col = albedo * (direct * max(dot(N, L), 0.0) + amb);
+
+  /* ---- ocean specular sun glint ---- */
+  vec3 Hv = normalize(L + V);
+  float fres = 0.022 + 0.978 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+  float glint = pow(max(dot(N, Hv), 0.0), 760.0) * 3.4
+              + pow(max(dot(N, Hv), 0.0), 38.0) * 0.05;
+  col += water * (1.0 - iceM) * fres * glint * direct;
+
+  /* ---- night-side city lights, igniting progressively at dusk ---- */
+  float duskBase = smoothstep(0.10, -0.14, mu0);
+  if (duskBase > 0.001 && S.b > 0.003){
+    vec3 cp = n * 540.0;
+    vec3 ci = floor(cp), cf = fract(cp);
+    vec3 r3 = hash33(ci);
+    float dCell = length(cf - (0.20 + 0.60 * r3));
+    float br = hash13(ci + 5.7);
+    /* each settlement has its own ignition threshold inside the twilight band */
+    float ignite = smoothstep(0.07 - 0.17 * br, -0.03 - 0.17 * br, mu0);
+    float fw = fwidth(dCell) + 1e-3;
+    float spotR = 0.15 + 0.28 * br;
+    float spot = smoothstep(spotR + fw, max(spotR - fw, 0.0), dCell);
+    float minif = smoothstep(0.50, 0.15, fw);  /* fade specks to glow when far */
+    vec3 over = rotY(n, uCloudPhase);
+    float cloudOver = cloudField(over, uSimT, uCloudCover, 3);
+    vec3 cityCol = mix(vec3(1.0, 0.55, 0.22), vec3(1.0, 0.80, 0.55), pow(br, 7.0));
+    float E = (spot * minif * (0.5 + 3.0 * pow(br, 6.0)) + (1.0 - minif) * 0.40 + 0.13)
+            * S.b * S.b * ignite * duskBase;
+    col += cityCol * E * uCityGain * (1.0 - 0.85 * cloudOver);
+  }
+
+  oC = vec4(col, 1.0);
+}
+`;
+/* =====================================================================
+   MODULE: cloud shell — animated 3D-noise layer with sun-aware shading
+   ===================================================================== */
+const VS_SHELL = /* glsl */`
+uniform float uShellR;       /* shell radius in planet units */
+out vec3 vObj;
+void main(){
+  vObj = position * uShellR;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+const FS_CLOUD = /* glsl */`
+precision highp float;
+in vec3 vObj; out vec4 oC;
+uniform vec3  uSunObjC;      /* sun dir, cloud object space   */
+uniform vec3  uCamObjC;      /* camera pos / Rp, cloud space  */
+uniform vec3  uMoonObjC;
+uniform float uMoonRu;
+uniform vec3  uSunSurf;
+uniform float uSimT;
+uniform float uCloudCover;
+${GLSL_NOISE}
+${GLSL_ATM}
+${GLSL_LUT}
+${GLSL_CLOUDS}
+
+float moonEclipse(vec3 p, vec3 L){
+  vec3 toM = uMoonObjC - p;
+  float dm = length(toM);
+  float sep = acos(clamp(dot(toM / dm, L), -1.0, 1.0));
+  float am = asin(clamp(uMoonRu / dm, 0.0, 1.0));
+  const float as = 0.0047;
+  float cover = smoothstep(am + as, max(am - as, 0.0), sep)
+              * min(1.0, (am * am) / (as * as));
+  return 1.0 - 0.92 * clamp(cover, 0.0, 1.0);
+}
+
+void main(){
+  vec3 n = normalize(vObj);
+  float d = cloudField(n, uSimT, uCloudCover, 5);
+  if (d < 0.004) discard;
+
+  float mu0 = dot(n, uSunObjC);
+  vec3 sunT = lutT(0.0045 * uRp, mu0);       /* sunset-lit clouds at the terminator */
+
+  /* directional self-shadowing -> silver lining on front edges */
+  vec3 sunTan = normalize(uSunObjC - n * mu0 + 1e-5);
+  float dsh = cloudField(normalize(n + sunTan * 0.016), uSimT, uCloudCover, 4);
+  float thick = exp(-max(dsh * 1.9 - d * 0.55, 0.0) * 1.9);
+
+  float wrap = clamp((mu0 + 0.06) / 1.06, 0.0, 1.0);
+  vec3 direct = uSunSurf * sunT * moonEclipse(n, uSunObjC);
+  vec3 bodyC = mix(vec3(0.60, 0.645, 0.70), vec3(1.0), exp(-d * 1.25));
+
+  /* forward scattering when looking toward the sun through thin cloud */
+  vec3 viewD = normalize(n - uCamObjC);
+  float silver = pow(max(dot(viewD, uSunObjC), 0.0), 9.0) * exp(-d * 2.4) * 0.55;
+
+  vec3 amb = vec3(0.050, 0.075, 0.120) * uAtmoDensity * smoothstep(-0.10, 0.40, mu0)
+           + vec3(0.0011, 0.0013, 0.0018);
+  amb += max(dot(n, normalize(uMoonObjC)), 0.0)
+       * vec3(0.0013, 0.0016, 0.0022) * smoothstep(0.05, -0.20, mu0);
+
+  vec3 col = bodyC * (direct * wrap * thick + amb) + direct * silver;
+  float alpha = clamp(1.0 - exp(-d * 3.4), 0.0, 0.93);
+  oC = vec4(col, alpha);
+}
+`;
+
+/* =====================================================================
+   MODULE: aurora — raymarched emissive curtains around the magnetic poles
+   (additive, night side only; depth handled analytically so arcs can
+   rise in front of the planet disc)
+   ===================================================================== */
+const FS_AURORA = /* glsl */`
+precision highp float;
+in vec3 vObj; out vec4 oC;
+uniform vec3  uCamObjA;
+uniform vec3  uSunObjA;
+uniform float uSimT;
+uniform float uAurGain;
+${GLSL_NOISE}
+
+const float R0 = 1.012, R1 = 1.052;
+const vec3 MAG_AX = normalize(vec3(0.16, 0.985, 0.06));
+
+vec2 sphereHit(vec3 ro, vec3 rd, float r){
+  float b = dot(ro, rd);
+  float c = dot(ro, ro) - r * r;
+  float h = b * b - c;
+  if (h < 0.0) return vec2(1e9, -1e9);
+  h = sqrt(h);
+  return vec2(-b - h, -b + h);
+}
+
+void main(){
+  vec3 ro = uCamObjA;
+  vec3 rd = normalize(vObj - ro);
+  vec2 sh = sphereHit(ro, rd, R1);
+  float t0 = max(sh.x, 0.0);
+  float t1 = sh.y;
+  vec2 pl = sphereHit(ro, rd, 1.0);
+  if (pl.x > 0.0){
+    if (pl.x < t0 + 1e-4) discard;          /* shell segment hidden by planet */
+    t1 = min(t1, pl.x);
+  }
+  if (t1 <= t0) discard;
+
+  /* polar-band early out: probe magnetic latitude along the segment */
+  float keep = 0.0;
+  for (int k = 0; k < 3; k++){
+    vec3 p = ro + rd * mix(t0, t1, float(k) * 0.5);
+    if (abs(dot(normalize(p), MAG_AX)) > 0.74) keep = 1.0;
+  }
+  if (keep < 0.5) discard;
+
+  const int N = 14;
+  float ds = (t1 - t0) / float(N);
+  float jit = hash13(vec3(gl_FragCoord.xy, uSimT)) * ds;
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < N; i++){
+    vec3 p = ro + rd * (t0 + float(i) * ds + jit);
+    float r = length(p);
+    float h01 = (r - R0) / (R1 - R0);
+    if (h01 < 0.0 || h01 > 1.0) continue;
+    vec3 dm = p / r;
+    float mlat = abs(asin(clamp(dot(dm, MAG_AX), -1.0, 1.0)));
+    /* wandering auroral oval (xz-plane noise: continuous across longitudes) */
+    float ring = 1.18 + 0.07 * snoise(vec3(dm.x * 2.3, dm.z * 2.3, uSimT * 0.045));
+    float band = exp(-pow((mlat - ring) / 0.050, 2.0));
+    /* fine vertical curtain striations, drifting */
+    float st = 0.5 + 0.5 * snoise(vec3(dm.x * 34.0 + uSimT * 0.05,
+                                       dm.z * 34.0 - uSimT * 0.04,
+                                       uSimT * 0.30));
+    st = pow(st, 3.0) * 1.5;
+    float vp = smoothstep(0.0, 0.14, h01) * exp(-h01 * 2.4);
+    float act = 0.40 + 0.60 * pow(0.5 + 0.5 * snoise(vec3(uSimT * 0.05, 1.7, dm.x * 0.5)), 2.0);
+    float sgate = smoothstep(0.02, -0.16, dot(dm, uSunObjA));
+    vec3 cc = mix(vec3(0.10, 0.95, 0.34), vec3(0.46, 0.20, 0.88),
+                  smoothstep(0.22, 0.85, h01));
+    cc += vec3(0.35, 0.02, 0.10) * smoothstep(0.75, 1.0, h01);   /* faint red crown */
+    acc += cc * band * st * vp * act * sgate * ds;
+  }
+  oC = vec4(acc * uAurGain, 1.0);
+}
+`;
+
+/* =====================================================================
+   MODULE: moon — procedural cratered companion with correct phase,
+   planet-shine fill and lunar-eclipse darkening
+   ===================================================================== */
+const VS_MOON = /* glsl */`
+out vec3 vObj;
+void main(){
+  vObj = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+const FS_MOON = /* glsl */`
+precision highp float;
+in vec3 vObj; out vec4 oC;
+uniform vec3  uSunObjM;      /* sun dir, moon object space     */
+uniform vec3  uPlanetDirM;   /* dir to planet, moon obj space  */
+uniform vec3  uSunSurf;
+uniform float uMoonShadow;   /* 0..1 inside the planet umbra   */
+${GLSL_NOISE}
+
+/* layered 8-cell jittered voronoi -> bowl + rim crater profile */
+float craterField(vec3 d){
+  float h = 0.0, sc = 2.6, amp = 1.0;
+  for (int lvl = 0; lvl < 3; lvl++){
+    vec3 p = d * sc;
+    vec3 base = floor(p - 0.5);
+    float fmin = 1e9; vec3 idMin = vec3(0.0);
+    for (int j = 0; j < 8; j++){
+      vec3 o = vec3(float(j & 1), float((j >> 1) & 1), float((j >> 2) & 1));
+      vec3 cell = base + o;
+      vec3 q = cell + 0.10 + 0.80 * hash33(cell + float(lvl) * 17.0);
+      float dd = length(p - q);
+      if (dd < fmin){ fmin = dd; idMin = cell; }
+    }
+    float hsz = hash13(idMin + 7.7 + float(lvl));
+    float r0 = 0.30 * (0.55 + 0.85 * hsz);
+    float bowl = smoothstep(r0, r0 * 0.30, fmin);
+    float rim  = exp(-pow((fmin - r0) / (r0 * 0.28), 2.0));
+    h += (-bowl * 0.85 + rim * 0.45) * amp * (0.4 + 0.6 * hsz);
+    sc *= 2.9; amp *= 0.42;
+  }
+  return h + fbm(d * 9.0, 3) * 0.22;          /* regolith roughness */
+}
+
+void main(){
+  vec3 n = normalize(vObj);
+  vec3 upv = abs(n.y) > 0.93 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
+  vec3 tn = normalize(cross(upv, n));
+  vec3 bn = cross(n, tn);
+  const float e = 0.012;
+  float hC = craterField(n);
+  float gT = (craterField(normalize(n + tn * e)) - hC) / e;
+  float gB = (craterField(normalize(n + bn * e)) - hC) / e;
+  vec3 N = normalize(n - (tn * gT + bn * gB) * 0.16);
+
+  float mar = smoothstep(0.10, 0.60, fbm(n * 1.6 + 2.3, 4));
+  vec3 albedo = vec3(0.155, 0.152, 0.148) * (1.0 - 0.48 * mar)
+              * (0.85 + 0.30 * hC + 0.15 * fbm(n * 25.0, 2));
+
+  float ndl = max(dot(N, uSunObjM), 0.0);
+  /* lunar eclipse: only refracted red light reaches the umbra */
+  vec3 direct = uSunSurf * mix(vec3(1.0), vec3(0.085, 0.022, 0.010), uMoonShadow);
+  vec3 fill = max(dot(N, uPlanetDirM), 0.0) * vec3(0.0090, 0.0115, 0.0160);
+  oC = vec4(albedo * (direct * ndl + fill + 0.0004), 1.0);
+}
+`;
+/* =====================================================================
+   MODULE: atmosphere pass — full-screen single-scattering ray march
+   Rayleigh + Mie (Cornette-Shanks) + ozone, sun transmittance from the
+   precomputed LUT, depth-aware (truncates on terrain / transiting moon),
+   per-pixel jitter to hide step banding, night-side airglow line.
+   ===================================================================== */
+const FS_ATMO = /* glsl */`
+precision highp float;
+in vec2 vUv; out vec4 oC;
+uniform sampler2D uScene;
+uniform sampler2D uDepth;
+uniform vec3  uCamPosW;
+uniform mat4  uInvProj;
+uniform mat4  uInvViewProj;
+uniform vec3  uSunDirW;
+uniform vec3  uSunCol;
+uniform float uSunI;
+uniform int   uSteps;
+uniform float uTime;
+${GLSL_NOISE}
+${GLSL_ATM}
+${GLSL_LUT}
+
+void main(){
+  vec3 scene = texture(uScene, vUv).rgb;
+
+  /* view ray + scene distance reconstructed from the depth buffer */
+  vec4 wp = uInvViewProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+  vec3 rd = normalize(wp.xyz / wp.w - uCamPosW);
+  float zb = texture(uDepth, vUv).r;
+  float distScene = 1e9;
+  if (zb < 0.999999){
+    vec4 vp = uInvProj * vec4(vUv * 2.0 - 1.0, zb * 2.0 - 1.0, 1.0);
+    distScene = length(vp.xyz / vp.w);
+  }
+
+  vec2 atm = raySphere(uCamPosW, rd, uRa);
+  float t0 = max(atm.x, 0.0);
+  float t1 = min(atm.y, distScene);
+  if (t1 <= t0){ oC = vec4(scene, 1.0); return; }
+
+  float mu  = dot(rd, uSunDirW);
+  float phR = phaseR(mu), phM = phaseM(mu);
+  float ds  = (t1 - t0) / float(uSteps);
+  float jit = (hash13(vec3(gl_FragCoord.xy, fract(uTime) * 113.0)) - 0.5) * ds;
+
+  vec3 T = vec3(1.0), S = vec3(0.0);
+  for (int i = 0; i < 32; i++){
+    if (i >= uSteps) break;
+    float t = t0 + (float(i) + 0.5) * ds + jit;
+    vec3 p = uCamPosW + rd * t;
+    float r = length(p);
+    float h = r - uRp;
+    vec3 dns = atmDens(h);
+    vec3  scaR = BETA_R * dns.x * uAtmoDensity;
+    float scaM = BETA_MS * dns.y * uAtmoDensity;
+    vec3 ext = (BETA_R * dns.x + vec3(BETA_ME) * dns.y + BETA_O * dns.z) * uAtmoDensity;
+    vec3 stepT = exp(-ext * ds);
+    vec3 Ts = lutT(h, dot(p, uSunDirW) / r);
+    vec3 inscat = (scaR * phR + vec3(scaM * phM)) * Ts;
+    /* energy-conserving per-step integration (Frostbite) */
+    S += T * (inscat - inscat * stepT) / max(ext, vec3(1e-5));
+    T *= stepT;
+  }
+  vec3 col = scene * T + S * uSunCol * uSunI;
+
+  /* faint green airglow line on the night limb (rays that miss the ground) */
+  if (distScene > 1e8){
+    float tca = max(0.0, -dot(uCamPosW, rd));
+    float tangAlt = length(uCamPosW + rd * tca) - uRp;
+    float ag = exp(-pow((tangAlt - 0.088) / 0.014, 2.0));
+    float nightF = smoothstep(0.15, -0.25, dot(normalize(uCamPosW + rd * max(tca, 1e-3)), uSunDirW));
+    col += vec3(0.10, 0.55, 0.35) * ag * nightF * 0.045 * uAtmoDensity;
+  }
+  oC = vec4(col, 1.0);
+}
+`;
+
+/* =====================================================================
+   MODULE: post-processing — bloom chain + final composite
+   ===================================================================== */
+const FS_BRIGHT = /* glsl */`
+precision highp float;
+in vec2 vUv; out vec4 oC;
+uniform sampler2D uTex;
+uniform float uThresh, uKnee, uExposure;
+void main(){
+  vec3 c = texture(uTex, vUv).rgb * uExposure;
+  float l = max(c.r, max(c.g, c.b));
+  float soft = clamp(l - uThresh + uKnee, 0.0, 2.0 * uKnee);
+  soft = soft * soft / (4.0 * uKnee + 1e-4);
+  float w = max(soft, l - uThresh) / max(l, 1e-4);
+  oC = vec4(max(c * w, 0.0), 1.0);
+}
+`;
+/** 13-tap downsample (Jimenez / CoD style) — wide, stable bloom. */
+const FS_DOWN = /* glsl */`
+precision highp float;
+in vec2 vUv; out vec4 oC;
+uniform sampler2D uTex;
+uniform vec2 uTexel;
+vec3 T(vec2 o){ return texture(uTex, vUv + o * uTexel).rgb; }
+void main(){
+  vec3 a = T(vec2(-2,-2)), b = T(vec2(0,-2)), c = T(vec2(2,-2));
+  vec3 d = T(vec2(-2, 0)), e = T(vec2(0, 0)), f = T(vec2(2, 0));
+  vec3 g = T(vec2(-2, 2)), h = T(vec2(0, 2)), i = T(vec2(2, 2));
+  vec3 j = T(vec2(-1,-1)), k = T(vec2(1,-1)), l = T(vec2(-1,1)), m = T(vec2(1,1));
+  vec3 col = e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625
+           + (j + k + l + m) * 0.125;
+  oC = vec4(col, 1.0);
+}
+`;
+/** 9-tap tent upsample; rendered with additive blending onto the level above. */
+const FS_UP = /* glsl */`
+precision highp float;
+in vec2 vUv; out vec4 oC;
+uniform sampler2D uTex;
+uniform vec2 uTexel;
+vec3 T(vec2 o){ return texture(uTex, vUv + o * uTexel).rgb; }
+void main(){
+  vec3 s = T(vec2(-1,-1)) + 2.0*T(vec2(0,-1)) + T(vec2(1,-1))
+         + 2.0*T(vec2(-1,0)) + 4.0*T(vec2(0,0)) + 2.0*T(vec2(1,0))
+         + T(vec2(-1,1)) + 2.0*T(vec2(0,1)) + T(vec2(1,1));
+  oC = vec4(s / 16.0, 1.0);
+}
+`;
+
+/**
+ * Final composite: bloom mix, procedural lens flare (driven by the actual
+ * on-screen sun luminance, so the atmosphere "lights it up" at sunrise),
+ * radial chromatic aberration, ACES (Hill fit), vignette, animated film
+ * grain, intro fade, sRGB encode.
+ */
+const FS_FINAL = /* glsl */`
+precision highp float;
+in vec2 vUv; out vec4 oC;
+uniform sampler2D uScene;
+uniform sampler2D uBloom;
+uniform float uExposure, uBloomI, uCA, uGrain, uVig, uFade, uTime, uFlareI;
+uniform vec2  uSunUV, uRes;
+uniform float uSunVis;
+${GLSL_NOISE}
+
+vec3 aces(vec3 c){
+  const mat3 IN  = mat3(0.59719, 0.07600, 0.02840,
+                        0.35458, 0.90834, 0.13383,
+                        0.04823, 0.01566, 0.83777);
+  const mat3 OUT = mat3( 1.60475, -0.10208, -0.00327,
+                        -0.53108,  1.10813, -0.07276,
+                        -0.07367, -0.00605,  1.07602);
+  c = IN * c;
+  vec3 a = c * (c + 0.0245786) - 0.000090537;
+  vec3 b = c * (0.983729 * c + 0.4329510) + 0.238081;
+  return clamp(OUT * (a / b), 0.0, 1.0);
+}
+
+vec3 lensFlare(vec2 uv){
+  if (uSunVis < 0.003) return vec3(0.0);
+  float asp = uRes.x / uRes.y;
+  vec2 c = (uv - 0.5) * vec2(asp, 1.0);
+  vec2 s = (uSunUV - 0.5) * vec2(asp, 1.0);
+  /* drive intensity with the actual rendered sun luminance (atmosphere-
+     extinguished at the limb -> the flare ignites with the sunrise)     */
+  vec3 sl = texture(uBloom, clamp(uSunUV, 0.01, 0.99)).rgb;
+  float drive = clamp(dot(sl, vec3(0.06)), 0.0, 1.5) * uSunVis;
+  if (drive < 0.004) return vec3(0.0);
+  vec3 fl = vec3(0.0);
+  /* ghosts along the sun->centre axis: (position along axis, radius, gain) */
+  const vec3 G[5] = vec3[5](vec3(-0.42, 0.050, 0.16), vec3(-0.86, 0.090, 0.10),
+                            vec3( 0.33, 0.028, 0.18), vec3( 0.72, 0.130, 0.07),
+                            vec3( 1.45, 0.190, 0.05));
+  for (int i = 0; i < 5; i++){
+    vec2 gp = -s * G[i].x;
+    float dd = length(c - gp) / G[i].y;
+    float blob = exp(-dd * dd);
+    float ring = exp(-pow((length(c - gp) - G[i].y) / (G[i].y * 0.45), 2.0)) * 0.6;
+    vec3 tint = mix(vec3(0.45, 0.65, 1.0), vec3(1.0, 0.55, 0.35), float(i) / 4.0);
+    fl += (blob + ring) * G[i].z * tint;
+  }
+  /* wide halo opposite the sun */
+  float halo = exp(-pow((length(c + s * 0.55) - 0.42) / 0.10, 2.0));
+  fl += halo * 0.05 * vec3(0.5, 0.7, 1.0);
+  /* anamorphic streak through the sun */
+  vec2 ds = c - s;
+  fl += exp(-pow(ds.y * 42.0, 2.0)) * exp(-abs(ds.x) * 4.5) * 0.55 * vec3(0.55, 0.72, 1.0);
+  return fl * drive * uFlareI;
+}
+
+void main(){
+  vec2 q = vUv - 0.5;
+  vec2 off = q * dot(q, q) * uCA;           /* radial chromatic aberration */
+  vec3 hdr;
+  hdr.r = texture(uScene, vUv + off).r + texture(uBloom, vUv + off).r * uBloomI;
+  hdr.g = texture(uScene, vUv      ).g + texture(uBloom, vUv      ).g * uBloomI;
+  hdr.b = texture(uScene, vUv - off).b + texture(uBloom, vUv - off).b * uBloomI;
+  hdr += lensFlare(vUv);
+  hdr *= uExposure;
+  vec3 ldr = aces(hdr);
+  ldr *= 1.0 - uVig * smoothstep(0.42, 1.05, length(q) * 1.41);
+  float gn = hash13(vec3(gl_FragCoord.xy, fract(uTime) * 191.0)) - 0.5;
+  ldr += gn * uGrain * (1.0 - clamp(dot(ldr, vec3(0.3333)), 0.0, 1.0) * 0.75);
+  ldr = clamp(ldr * uFade, 0.0, 1.0);
+  ldr = mix(ldr * 12.92, 1.055 * pow(ldr, vec3(1.0 / 2.4)) - 0.055,
+            step(vec3(0.0031308), ldr));
+  oC = vec4(ldr, 1.0);
+}
+`;
+/* =====================================================================
+   MODULE: renderer, shared uniforms, render targets, scene assembly
+   ===================================================================== */
+const canvas = $('#view');
+const renderer = new THREE.WebGLRenderer({
+  canvas, antialias: false, alpha: false, stencil: false, depth: true,
+  powerPreference: 'high-performance',
+});
+renderer.toneMapping = THREE.NoToneMapping;          /* ACES lives in the final pass */
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+renderer.autoClear = false;
+renderer.setClearColor(0x000000, 1);
+renderer.setPixelRatio(1);                           /* DPR folded into render scale */
+
+/** Shared uniform registry — one `{value}` object per quantity, referenced
+ *  by every material that needs it, so each is updated in exactly one place. */
+const U = {
+  time:        { value: 0 },
+  simT:        { value: 0 },
+  rp:          { value: CFG.RP0 },
+  ra:          { value: CFG.RP0 + CFG.ATM_H },
+  atmoDensity: { value: 1.0 },
+  lut:         { value: null },
+  surf:        { value: null },
+  sunDirW:     { value: new THREE.Vector3(...CFG.SUN_DIR).normalize() },
+  sunColBase:  { value: new THREE.Vector3(...CFG.SUN_COL) },
+  sunSurf:     { value: new THREE.Vector3() },   /* sun irradiance on geometry */
+  sunObjP:     { value: new THREE.Vector3() },   /* planet object space */
+  camObjP:     { value: new THREE.Vector3() },
+  sunObjC:     { value: new THREE.Vector3() },   /* cloud object space  */
+  camObjC:     { value: new THREE.Vector3() },
+  moonObjP:    { value: new THREE.Vector3() },
+  moonObjC:    { value: new THREE.Vector3() },
+  moonRu:      { value: CFG.MOON_R / CFG.RP0 },
+  cloudPhase:  { value: 0 },
+  cloudCover:  { value: 0.30 },
+  cityGain:    { value: 5.0 },
+  aurGain:     { value: 14.0 },
+  camPosW:     { value: new THREE.Vector3() },
+};
+
+/** @returns {THREE.WebGLRenderTarget} half-float RT with sane defaults */
+function makeRT(w, h, opts = {}){
+  return new THREE.WebGLRenderTarget(w, h, {
+    type: THREE.HalfFloatType, format: THREE.RGBAFormat,
+    minFilter: opts.mip ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    wrapS: opts.wrapX ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping,
+    wrapT: THREE.ClampToEdgeWrapping,
+    depthBuffer: !!opts.depth, stencilBuffer: false,
+    generateMipmaps: !!opts.mip,
+  });
+}
+
+/* ---------- fullscreen-pass plumbing (single clip-space triangle) ---------- */
+const fsScene = new THREE.Scene();
+const fsCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const fsGeo = new THREE.BufferGeometry();
+fsGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1,-1,0, 3,-1,0, -1,3,0]), 3));
+fsGeo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0,0, 2,0, 0,2]), 2));
+const fsMesh = new THREE.Mesh(fsGeo, null);
+fsMesh.frustumCulled = false;
+fsScene.add(fsMesh);
+
+/** Build a fullscreen-pass material. */
+function passMat(frag, uniforms, blending){
+  return new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3, vertexShader: VS_FULL, fragmentShader: frag,
+    uniforms, depthTest: false, depthWrite: false,
+    blending: blending ?? THREE.NoBlending,
+  });
+}
+/** Run a fullscreen pass into `target` (null = canvas). */
+function runPass(mat, target){
+  fsMesh.material = mat;
+  renderer.setRenderTarget(target);
+  renderer.render(fsScene, fsCam);
+}
+
+/* ---------- precompute targets ---------- */
+const lutRT = makeRT(256, 128);
+const lutMat = passMat(FS_LUT, { uRp: U.rp, uRa: U.ra, uAtmoDensity: U.atmoDensity });
+/** (Re)bake the transmittance LUT — cheap; runs on radius/density changes. */
+function bakeLUT(){
+  runPass(lutMat, lutRT);
+  renderer.setRenderTarget(null);
+  U.lut.value = lutRT.texture;
+}
+
+const SURF_W = Math.min(4096, renderer.capabilities.maxTextureSize);
+const surfRT = makeRT(SURF_W, SURF_W / 2, { mip: true, wrapX: true });
+const surfBakeMat = passMat(FS_SURFBAKE, { uSeed: { value: CFG.SEED } });
+/** One-time bake of the heavy surface fields (height/moisture/cities). */
+function bakeSurface(){
+  runPass(surfBakeMat, surfRT);
+  renderer.setRenderTarget(null);
+  U.surf.value = surfRT.texture;
+}
+
+/* ---------- scene objects ---------- */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(CFG.FOV, 16 / 9, 0.001, 400);
+camera.position.set(0, 0, CFG.RP0 + 2.2);
+
+/** ShaderMaterial shorthand for scene meshes. */
+function meshMat(vs, fs, uniforms, opts = {}){
+  return new THREE.ShaderMaterial(Object.assign({
+    glslVersion: THREE.GLSL3, vertexShader: vs, fragmentShader: fs, uniforms,
+  }, opts));
+}
+
+const planet = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 384, 192),
+  meshMat(VS_SURF, FS_SURF, {
+    uSurf: U.surf, uSunObj: U.sunObjP, uCamObj: U.camObjP, uSunSurf: U.sunSurf,
+    uMoonObj: U.moonObjP, uMoonRu: U.moonRu, uSimT: U.simT,
+    uCloudPhase: U.cloudPhase, uCloudCover: U.cloudCover, uCityGain: U.cityGain,
+    uRp: U.rp, uRa: U.ra, uAtmoDensity: U.atmoDensity, uLut: U.lut,
+  }));
+planet.renderOrder = 0;
+scene.add(planet);
+
+const clouds = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 192, 96),
+  meshMat(VS_SHELL, FS_CLOUD, {
+    uShellR: { value: CFG.CLOUD_H },
+    uSunObjC: U.sunObjC, uCamObjC: U.camObjC, uMoonObjC: U.moonObjC, uMoonRu: U.moonRu,
+    uSunSurf: U.sunSurf, uSimT: U.simT, uCloudCover: U.cloudCover,
+    uRp: U.rp, uRa: U.ra, uAtmoDensity: U.atmoDensity, uLut: U.lut,
+  }, { transparent: true, depthWrite: false }));
+clouds.renderOrder = 2;
+scene.add(clouds);
+
+const aurora = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 96, 48),
+  meshMat(VS_SHELL, FS_AURORA, {
+    uShellR: { value: CFG.AUR_R1 },
+    uCamObjA: U.camObjP, uSunObjA: U.sunObjP,    /* aurora is pinned to the planet */
+    uSimT: U.simT, uAurGain: U.aurGain,
+  }, { transparent: true, depthWrite: false, depthTest: false,
+       side: THREE.BackSide, blending: THREE.AdditiveBlending }));
+aurora.renderOrder = 3;
+aurora.frustumCulled = false;
+scene.add(aurora);
+
+const moon = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 128, 64),
+  meshMat(VS_MOON, FS_MOON, {
+    uSunObjM: { value: new THREE.Vector3() },
+    uPlanetDirM: { value: new THREE.Vector3() },
+    uSunSurf: U.sunSurf, uMoonShadow: { value: 0 },
+  }));
+moon.scale.setScalar(CFG.MOON_R);
+moon.renderOrder = 0;
+scene.add(moon);
+
+const sky = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 48, 24),
+  meshMat(VS_SKY, FS_SKY, { uSunDirW: U.sunDirW, uSunCol: U.sunColBase },
+    { side: THREE.BackSide, depthWrite: false }));
+sky.scale.setScalar(220);
+sky.renderOrder = 1;          /* after opaque: planet pixels are z-rejected */
+sky.frustumCulled = false;
+scene.add(sky);
+
+/** Apply the HUD radius slider: rescale every planet-bound mesh. */
+function applyRadius(km){
+  state.radiusKm = km;
+  const rp = km / 1000;
+  U.rp.value = rp;
+  U.ra.value = rp + CFG.ATM_H;
+  U.moonRu.value = CFG.MOON_R / rp;
+  planet.scale.setScalar(rp);
+  clouds.scale.setScalar(rp * CFG.CLOUD_H);
+  aurora.scale.setScalar(rp * CFG.AUR_R1);
+  bakeLUT();
+}
+
+/* ---------- post pipeline targets & materials ---------- */
+let rtScene = null, rtAtmo = null, bloomRTs = [];
+const BLOOM_LEVELS = 5;
+
+const atmoMat = passMat(FS_ATMO, {
+  uScene: { value: null }, uDepth: { value: null },
+  uCamPosW: U.camPosW,
+  uInvProj: { value: new THREE.Matrix4() },
+  uInvViewProj: { value: new THREE.Matrix4() },
+  uSunDirW: U.sunDirW, uSunCol: U.sunColBase,
+  uSunI: { value: 13.0 }, uSteps: { value: 24 }, uTime: U.time,
+  uRp: U.rp, uRa: U.ra, uAtmoDensity: U.atmoDensity, uLut: U.lut,
+});
+const brightMat = passMat(FS_BRIGHT, {
+  uTex: { value: null }, uThresh: { value: 1.25 }, uKnee: { value: 0.7 },
+  uExposure: { value: 1 },
+});
+const downMat = passMat(FS_DOWN, { uTex: { value: null }, uTexel: { value: new THREE.Vector2() } });
+const upMat = passMat(FS_UP, { uTex: { value: null }, uTexel: { value: new THREE.Vector2() } },
+  THREE.AdditiveBlending);
+const finalMat = passMat(FS_FINAL, {
+  uScene: { value: null }, uBloom: { value: null },
+  uExposure: { value: 1 }, uBloomI: { value: 0.065 },
+  uCA: { value: 0.0045 }, uGrain: { value: 0.045 }, uVig: { value: 0.32 },
+  uFade: { value: 0 }, uTime: U.time, uFlareI: { value: 0.5 },
+  uSunUV: { value: new THREE.Vector2(0.5, 0.5) }, uSunVis: { value: 0 },
+  uRes: { value: new THREE.Vector2(1, 1) },
+});
+
+/** (Re)allocate the screen-sized render targets at `w×h`. */
+function buildRTs(w, h){
+  rtScene?.depthTexture?.dispose(); rtScene?.dispose(); rtAtmo?.dispose();
+  bloomRTs.forEach(rt => rt.dispose());
+  const depthTex = new THREE.DepthTexture(w, h);
+  depthTex.type = THREE.UnsignedIntType;
+  depthTex.format = THREE.DepthFormat;
+  rtScene = makeRT(w, h, { depth: true });
+  rtScene.depthTexture = depthTex;
+  rtAtmo = makeRT(w, h);
+  bloomRTs = [];
+  let bw = w >> 1, bh = h >> 1;
+  for (let i = 0; i < BLOOM_LEVELS; i++){
+    bloomRTs.push(makeRT(Math.max(bw, 4), Math.max(bh, 4)));
+    bw >>= 1; bh >>= 1;
+  }
+  finalMat.uniforms.uRes.value.set(w, h);
+}
+
+const DPR = () => Math.min(window.devicePixelRatio || 1, 1.75);
+/** Resize canvas + RTs to CSS size × DPR × adaptive quality scale. */
+function resize(){
+  const w = Math.max(8, Math.floor(canvas.clientWidth  * DPR() * state.quality.scale));
+  const h = Math.max(8, Math.floor(canvas.clientHeight * DPR() * state.quality.scale));
+  renderer.setSize(w, h, false);
+  camera.aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
+  camera.updateProjectionMatrix();
+  buildRTs(w, h);
+}
+window.addEventListener('resize', resize);
+
+/* =====================================================================
+   MODULE: per-frame world update (spins, moon orbit, object-space dirs)
+   ===================================================================== */
+const qTilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), CFG.TILT);
+const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3();
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+
+function updateWorld(){
+  const t = state.simT;
+  const spin = TAU * t / CFG.DAY_LENGTH;
+  const cloudSpin = spin * 1.045 + t * 0.0015;
+
+  planet.quaternion.copy(qTilt).multiply(_q1.setFromAxisAngle(Y_AXIS, spin));
+  clouds.quaternion.copy(qTilt).multiply(_q1.setFromAxisAngle(Y_AXIS, cloudSpin));
+  aurora.quaternion.copy(planet.quaternion);
+  U.cloudPhase.value = cloudSpin - spin;
+
+  /* moon: inclined circular orbit, tidally locked */
+  const ang = TAU * t / CFG.MOON_PERIOD + 2.35;
+  _v1.set(Math.cos(ang) * CFG.MOON_ORBIT, 0, Math.sin(ang) * CFG.MOON_ORBIT);
+  _v1.applyQuaternion(_q2.setFromAxisAngle(new THREE.Vector3(1, 0, 0), CFG.MOON_INCL));
+  moon.position.copy(_v1);
+  moon.quaternion.setFromAxisAngle(Y_AXIS, -ang + Math.PI);
+
+  const rp = U.rp.value;
+  const sunW = U.sunDirW.value;
+
+  /* planet object space (also used by the aurora shell) */
+  _q1.copy(planet.quaternion).invert();
+  U.sunObjP.value.copy(sunW).applyQuaternion(_q1);
+  U.camObjP.value.copy(camera.position).applyQuaternion(_q1).divideScalar(rp);
+  U.moonObjP.value.copy(moon.position).applyQuaternion(_q1).divideScalar(rp);
+
+  /* cloud object space */
+  _q2.copy(clouds.quaternion).invert();
+  U.sunObjC.value.copy(sunW).applyQuaternion(_q2);
+  U.camObjC.value.copy(camera.position).applyQuaternion(_q2).divideScalar(rp);
+  U.moonObjC.value.copy(moon.position).applyQuaternion(_q2).divideScalar(rp);
+
+  /* moon object space + planet umbra test (lunar eclipse) */
+  _q2.copy(moon.quaternion).invert();
+  moon.material.uniforms.uSunObjM.value.copy(sunW).applyQuaternion(_q2);
+  moon.material.uniforms.uPlanetDirM.value.copy(moon.position).negate().normalize().applyQuaternion(_q2);
+  const proj = moon.position.dot(sunW);
+  let sh = 0;
+  if (proj < 0){
+    _v2.copy(sunW).multiplyScalar(proj);
+    const perp = _v3.copy(moon.position).sub(_v2).length();
+    sh = sstep(rp * 1.15, rp * 0.65, perp);
+  }
+  moon.material.uniforms.uMoonShadow.value = sh;
+
+  U.sunSurf.value.copy(U.sunColBase.value).multiplyScalar(2.65);
+  U.camPosW.value.copy(camera.position);
+  sky.position.copy(camera.position);
+
+  /* dynamic near plane keeps depth precision at every altitude */
+  const dist = camera.position.length();
+  camera.near = clamp((dist - rp) * 0.22, 0.0008, 0.6);
+  camera.far = 400;
+  camera.updateProjectionMatrix();
+}
+
+/* =====================================================================
+   MODULE: frame render — pass chain
+   ===================================================================== */
+const _m4 = new THREE.Matrix4();
+const _sunPt = new THREE.Vector3();
+
+function renderFrame(){
+  /* 1 — scene (HDR + depth) */
+  renderer.setRenderTarget(rtScene);
+  renderer.clear(true, true, false);
+  renderer.render(scene, camera);
+
+  /* 2 — atmosphere */
+  const au = atmoMat.uniforms;
+  au.uScene.value = rtScene.texture;
+  au.uDepth.value = rtScene.depthTexture;
+  au.uInvProj.value.copy(camera.projectionMatrixInverse);
+  _m4.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
+  au.uInvViewProj.value.copy(_m4);
+  au.uSteps.value = state.quality.atmoSteps;
+  runPass(atmoMat, rtAtmo);
+
+  /* 3 — bloom chain */
+  brightMat.uniforms.uTex.value = rtAtmo.texture;
+  brightMat.uniforms.uExposure.value = state.exposure;
+  runPass(brightMat, bloomRTs[0]);
+  for (let i = 0; i < BLOOM_LEVELS - 1; i++){
+    downMat.uniforms.uTex.value = bloomRTs[i].texture;
+    downMat.uniforms.uTexel.value.set(1 / bloomRTs[i].width, 1 / bloomRTs[i].height);
+    runPass(downMat, bloomRTs[i + 1]);
+  }
+  for (let i = BLOOM_LEVELS - 1; i > 0; i--){
+    upMat.uniforms.uTex.value = bloomRTs[i].texture;
+    upMat.uniforms.uTexel.value.set(1 / bloomRTs[i].width, 1 / bloomRTs[i].height);
+    runPass(upMat, bloomRTs[i - 1]);
+  }
+
+  /* 4 — final composite (flare needs the sun's screen position) */
+  const fu = finalMat.uniforms;
+  fu.uScene.value = rtAtmo.texture;
+  fu.uBloom.value = bloomRTs[0].texture;
+  fu.uExposure.value = state.exposure;
+  _sunPt.copy(U.sunDirW.value).multiplyScalar(50).add(camera.position).project(camera);
+  let vis = (_sunPt.z < 1 && Math.abs(_sunPt.x) < 1.3 && Math.abs(_sunPt.y) < 1.3) ? 1 : 0;
+  if (vis > 0){
+    /* analytic occlusion by the planet body, soft near the limb */
+    const b = camera.position.dot(U.sunDirW.value);
+    if (b < 0){
+      const perp = _v1.copy(camera.position).addScaledVector(U.sunDirW.value, -b).length();
+      vis *= sstep(U.rp.value * 0.997, U.rp.value * 1.006, perp);
+    }
+    const dm = _v1.copy(moon.position).sub(camera.position);
+    const bm = dm.dot(U.sunDirW.value);          /* moon can eclipse the flare too */
+    if (bm > 0){
+      const perpM = _v2.copy(dm).addScaledVector(U.sunDirW.value, -bm).length();
+      vis *= 1 - 0.96 * sstep(CFG.MOON_R * 1.05, CFG.MOON_R * 0.7, perpM);
+    }
+  }
+  fu.uSunVis.value = vis;
+  fu.uSunUV.value.set(_sunPt.x * 0.5 + 0.5, _sunPt.y * 0.5 + 0.5);
+  runPass(finalMat, null);
+}
+/* =====================================================================
+   MODULE: camera rig — inertial orbit + cinematic auto-drift
+   ===================================================================== */
+class CameraRig {
+  /** @param {HTMLElement} el pointer-event source (the canvas) */
+  constructor(el){
+    this.lon = 2.60; this.lat = 0.20; this.alt = 2.2;
+    this.tLon = this.lon; this.tLat = this.lat; this.tAlt = this.alt;
+    this.vLon = 0; this.vLat = 0;
+    this.dragging = false;
+    this.lastInput = -1e9;
+    this.enabled = false;               /* intro pilots the camera first */
+    this._px = 0; this._py = 0;
+
+    el.addEventListener('pointerdown', e => {
+      if (!this.enabled) return;
+      this.dragging = true;
+      this._px = e.clientX; this._py = e.clientY;
+      this.vLon = this.vLat = 0;
+      this.lastInput = performance.now() / 1000;
+      el.setPointerCapture(e.pointerId);
+      el.classList.add('dragging');
+    });
+    el.addEventListener('pointermove', e => {
+      if (!this.dragging) return;
+      const dx = e.clientX - this._px, dy = e.clientY - this._py;
+      this._px = e.clientX; this._py = e.clientY;
+      const k = 0.0042 * clamp(this.alt / 2.5, 0.06, 1.0);  /* slower when low */
+      this.tLon -= dx * k;
+      this.tLat = clamp(this.tLat + dy * k, -1.45, 1.45);
+      this.vLon = -dx * k * 60; this.vLat = dy * k * 60;
+      this.lastInput = performance.now() / 1000;
+    });
+    const end = e => {
+      if (!this.dragging) return;
+      this.dragging = false;
+      el.classList.remove('dragging');
+      this.lastInput = performance.now() / 1000;
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    el.addEventListener('wheel', e => {
+      if (!this.enabled) return;
+      e.preventDefault();
+      this.tAlt = clamp(this.tAlt * Math.exp(e.deltaY * 0.0011), CFG.ALT_MIN, CFG.ALT_MAX);
+      this.lastInput = performance.now() / 1000;
+    }, { passive: false });
+  }
+
+  /** Teleport (used by the intro hand-off and the debug API). */
+  setView(lon, lat, alt){
+    this.lon = this.tLon = lon;
+    this.lat = this.tLat = lat;
+    this.alt = this.tAlt = clamp(alt, CFG.ALT_MIN, CFG.ALT_MAX);
+  }
+
+  update(dt, now){
+    if (this.enabled && !this.dragging){
+      /* inertia tail then slow cinematic drift when idle */
+      this.tLon += this.vLon * dt; this.tLat = clamp(this.tLat + this.vLat * dt, -1.45, 1.45);
+      this.vLon *= Math.exp(-3.0 * dt); this.vLat *= Math.exp(-3.0 * dt);
+      if (now - this.lastInput > 6){
+        this.tLon += dt * 0.016;
+        this.tLat = damp(this.tLat, 0.16 + 0.07 * Math.sin(now * 0.05), 0.2, dt);
+      }
+    }
+    this.lon = damp(this.lon, this.tLon, 7, dt);
+    this.lat = damp(this.lat, this.tLat, 7, dt);
+    this.alt = Math.exp(damp(Math.log(this.alt), Math.log(this.tAlt), 6, dt));
+    if (this.enabled) this.apply();
+  }
+
+  apply(){
+    const d = U.rp.value + this.alt;
+    camera.position.set(
+      d * Math.cos(this.lat) * Math.cos(this.lon),
+      d * Math.sin(this.lat),
+      d * Math.cos(this.lat) * Math.sin(this.lon));
+    camera.up.set(0, 1, 0);
+    camera.lookAt(0, 0, 0);
+  }
+}
+const rig = new CameraRig(canvas);
+
+/* =====================================================================
+   MODULE: HUD — readouts + planet parameter sliders + time controls
+   ===================================================================== */
+const hud = {
+  els: {
+    alt: $('#hAlt'), time: $('#hTime'), latlon: $('#hLatLon'), tag: $('#hTag'),
+    fps: $('#mFps'),
+  },
+  _last: 0,
+  /** Refresh readouts at ~4 Hz (cheap DOM churn). */
+  update(now){
+    if (now - this._last < 0.25) return;
+    this._last = now;
+    const rp = U.rp.value;
+    const altKm = (camera.position.length() - rp) * 1000;
+    this.els.alt.textContent = altKm >= 9000
+      ? (altKm / 1000).toFixed(2) + ' × 10³ KM'
+      : altKm.toFixed(0) + ' KM';
+
+    /* sub-camera point, planet object space */
+    const d = _v1.copy(U.camObjP.value).normalize();
+    const ls = U.sunObjP.value;
+    const lat = Math.asin(clamp(d.y, -1, 1));
+    const lonC = Math.atan2(d.z, d.x), lonS = Math.atan2(ls.z, ls.x);
+    let H = lonC - lonS;
+    H = ((H + Math.PI) % TAU + TAU) % TAU - Math.PI;
+    let hrs = (12 + H * 12 / Math.PI) % 24; if (hrs < 0) hrs += 24;
+    const hh = Math.floor(hrs), mm = Math.floor((hrs - hh) * 60);
+    this.els.time.textContent = String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+
+    const latD = THREE.MathUtils.radToDeg(lat), lonD = THREE.MathUtils.radToDeg(lonC);
+    this.els.latlon.textContent =
+      Math.abs(latD).toFixed(1) + '°' + (latD >= 0 ? 'N' : 'S') + '  ' +
+      Math.abs(lonD).toFixed(1) + '°' + (lonD >= 0 ? 'E' : 'W');
+
+    const mu = d.dot(ls);
+    this.els.tag.textContent = state.paused ? 'HOLD'
+      : mu > 0.07 ? 'DAYLIGHT' : (mu < -0.12 ? 'NIGHT SIDE' : 'TERMINATOR');
+
+    const fps = 1000 / Math.max(state.quality.ema, 1);
+    this.els.fps.textContent = fps.toFixed(0) + ' FPS · ' +
+      (state.quality.scale * DPR()).toFixed(2) + '×';
+  },
+  show(){
+    $('#hud').classList.add('on');
+    $('#ctrl').classList.add('on');
+    $('#meta').classList.add('on');
+  },
+};
+
+/* ---------- control wiring ---------- */
+$('#sRadius').addEventListener('input', e => {
+  const km = +e.target.value;
+  $('#oRadius').textContent = km + ' KM';
+  applyRadius(km);
+  rig.tAlt = clamp(rig.tAlt, CFG.ALT_MIN, CFG.ALT_MAX);
+});
+$('#sAtmo').addEventListener('input', e => {
+  const v = +e.target.value / 100;
+  $('#oAtmo').textContent = v.toFixed(2) + ' BAR';
+  state.atmoDensity = v;
+  U.atmoDensity.value = v;
+  bakeLUT();
+});
+$('#sSpeed').addEventListener('input', e => {
+  const v = +e.target.value / 100;             /* slider 0..200 -> 0..2 */
+  state.speed = Math.pow(v, 3);                /* cubic: fine control near 1×, up to 8× */
+  $('#oSpeed').textContent = state.speed.toFixed(2) + '×';
+});
+function setPaused(p){
+  state.paused = p;
+  $('#bPause').classList.toggle('active', p);
+  $('#bPause').textContent = p ? '▶ RESUME' : '❚❚ PAUSE';
+}
+$('#bPause').addEventListener('click', () => setPaused(!state.paused));
+window.addEventListener('keydown', e => {
+  if (e.code === 'Space' && state.introDone){ e.preventDefault(); setPaused(!state.paused); }
+});
+/* =====================================================================
+   MODULE: ambient audio — deep drone + radio static + telemetry chirps
+   (pure WebAudio synthesis, reverb IR generated procedurally)
+   ===================================================================== */
+class AudioEngine {
+  constructor(){ this.ctx = null; this.master = null; this.muted = false; }
+
+  /** Build the whole graph. Must be called from a user gesture. */
+  start(){
+    if (this.ctx) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = this.ctx = new AC();
+    const master = this.master = ctx.createGain();
+    master.gain.value = 0;
+    const comp = ctx.createDynamicsCompressor();
+    master.connect(comp); comp.connect(ctx.destination);
+
+    /* big synthetic hall: stereo exponential-decay noise as convolver IR */
+    const verb = ctx.createConvolver();
+    verb.buffer = this._makeIR(ctx, 4.5);
+    verb.connect(master);
+
+    /* --- drone: detuned low partials -> lowpass, slow amplitude LFOs --- */
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 220; lp.Q.value = 0.6;
+    const droneGain = ctx.createGain(); droneGain.gain.value = 0.17;
+    lp.connect(droneGain); droneGain.connect(master);
+    const send = ctx.createGain(); send.gain.value = 0.4;
+    droneGain.connect(send); send.connect(verb);
+    [[38.0, 'sine', 0.62], [57.2, 'sine', 0.34], [76.6, 'triangle', 0.11]]
+      .forEach(([f, ty, g], i) => {
+        const o = ctx.createOscillator();
+        o.type = ty; o.frequency.value = f; o.detune.value = (i - 1) * 5;
+        const og = ctx.createGain(); og.gain.value = g;
+        const lfo = ctx.createOscillator(); lfo.frequency.value = 0.011 + i * 0.0073;
+        const lg = ctx.createGain(); lg.gain.value = g * 0.45;
+        lfo.connect(lg); lg.connect(og.gain);
+        o.connect(og); og.connect(lp);
+        o.start(); lfo.start();
+      });
+
+    /* --- faint radio static --- */
+    const nbuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const nd = nbuf.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    const noise = ctx.createBufferSource();
+    noise.buffer = nbuf; noise.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 2900; bp.Q.value = 1.7;
+    this.staticGain = ctx.createGain(); this.staticGain.gain.value = 0.011;
+    noise.connect(bp); bp.connect(this.staticGain); this.staticGain.connect(master);
+    noise.start();
+    this._verb = verb;
+    setInterval(() => this._tick(), 400);
+    master.gain.setTargetAtTime(0.8, ctx.currentTime + 0.2, 2.2);
+  }
+
+  /** @returns {AudioBuffer} stereo IR, exponential decay noise */
+  _makeIR(ctx, secs){
+    const len = Math.floor(ctx.sampleRate * secs);
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++){
+      const d = buf.getChannelData(ch);
+      let s = 0;
+      for (let i = 0; i < len; i++){
+        const w = Math.random() * 2 - 1;
+        s = s * 0.78 + w * 0.22;          /* cheap progressive lowpass */
+        d[i] = s * Math.pow(1 - i / len, 2.4);
+      }
+    }
+    return buf;
+  }
+
+  /** Random static crackle + rare telemetry chirp. */
+  _tick(){
+    if (!this.ctx || this.muted) return;
+    const t = this.ctx.currentTime;
+    if (Math.random() < 0.22){
+      this.staticGain.gain.setTargetAtTime(0.011 + Math.random() * 0.02, t, 0.05);
+      this.staticGain.gain.setTargetAtTime(0.010, t + 0.16, 0.30);
+    }
+    if (Math.random() < 0.012){
+      const o = this.ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(1280, t);
+      o.frequency.exponentialRampToValueAtTime(610, t + 0.27);
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.034, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+      o.connect(g); g.connect(this._verb);
+      o.start(t); o.stop(t + 0.6);
+    }
+  }
+
+  toggle(){
+    if (!this.ctx) return;
+    this.muted = !this.muted;
+    this.master.gain.setTargetAtTime(this.muted ? 0 : 0.8, this.ctx.currentTime, 0.4);
+    const b = $('#bMute');
+    b.classList.toggle('active', this.muted);
+    b.textContent = this.muted ? '♪ MUTED' : '♪ AUDIO';
+  }
+}
+const audio = new AudioEngine();
+$('#bMute').addEventListener('click', () => audio.toggle());
+
+/* =====================================================================
+   MODULE: intro director — night-side approach into a scripted sunrise
+   ===================================================================== */
+const intro = {
+  t0: -1, done: false,
+  start(now){
+    this.t0 = now;
+    setTimeout(() => $('#title').classList.add('on'), 700);
+    setTimeout(() => $('#title').classList.remove('on'), 3600);
+  },
+  /** Scripted camera + exposure + fade; sun crests the limb around t≈9.5 s. */
+  update(now){
+    if (this.done || this.t0 < 0) return;
+    const t = now - this.t0;
+    const p = sstep(3.2, 13.6, t);
+    const lon = THREE.MathUtils.degToRad(lerp(178, 95, p));
+    const lat = lerp(0.36, 0.17, sstep(3.2, 13.0, t));
+    const alt = lerp(2.30, 42.0, p);
+    rig.setView(lon, lat, alt);
+    rig.apply();
+    finalMat.uniforms.uFade.value = sstep(2.9, 6.8, t);
+    state.exposure = lerp(3.3, 1.0, sstep(8.3, 12.6, t));
+    if (t > 13.9) this.finish();
+  },
+  finish(){
+    if (this.done) return;
+    this.done = true;
+    state.introDone = true;
+    state.exposure = state.expTarget = 1.0;
+    finalMat.uniforms.uFade.value = 1;
+    $('#title').classList.remove('on');
+    rig.enabled = true;
+    /* Hand over on a full-planet view: closer than this and a visitor who
+       skipped the intro only sees ground, with nothing to orient them. */
+    rig.tAlt = Math.max(rig.tAlt, 42.0);
+    hud.show();
+  },
+};
+const trySkip = () => {
+  if (intro.t0 >= 0 && !intro.done && performance.now() / 1000 - intro.t0 > 1.5) intro.finish();
+};
+window.addEventListener('keydown', e => { if (e.code === 'Escape') trySkip(); });
+canvas.addEventListener('pointerdown', trySkip);
+
+/* =====================================================================
+   MODULE: main loop + adaptive quality
+   ===================================================================== */
+/** Keep frame time near 60 fps by scaling render resolution + march steps. */
+function qualityUpdate(dt){
+  const q = state.quality;
+  q.ema = lerp(q.ema, dt * 1000, 0.06);
+  if (++q.frames % 50) return;
+  if (q.ema > 18.5 && q.scale > 0.6){ q.scale = Math.max(0.6, q.scale - 0.1); resize(); }
+  else if (q.ema < 12.0 && q.scale < 1.0){ q.scale = Math.min(1.0, q.scale + 0.05); resize(); }
+  q.atmoSteps = q.scale < 0.75 ? 16 : 24;
+}
+
+let prevT = 0;
+function loop(tms){
+  requestAnimationFrame(loop);
+  const now = tms / 1000;
+  const dt = clamp(now - prevT || 0.016, 0.0001, 0.05);
+  prevT = now;
+  U.time.value = now;
+  if (!state.paused) state.simT += dt * state.speed;
+  U.simT.value = state.simT;
+
+  qualityUpdate(dt);
+  intro.update(now);
+  rig.update(dt, now);
+  if (intro.done){
+    const dayF = sstep(-0.12, 0.30, _v1.copy(camera.position).normalize().dot(U.sunDirW.value));
+    state.expTarget = lerp(3.1, 1.0, dayF);
+    state.exposure = damp(state.exposure, state.expTarget, 1.2, dt);
+  }
+  updateWorld();
+  renderFrame();
+  hud.update(now);
+}
+
+/* =====================================================================
+   BOOT
+   ===================================================================== */
+canvas.addEventListener('webglcontextlost', e => {
+  e.preventDefault();
+  fatal('The GPU context was lost.', 'Another application may have reset the graphics driver. Reload to resume the survey.');
+});
+
+async function boot(){
+  resize();
+  bakeLUT();
+  bakeSurface();
+  /* compile + warm every program while the gate hides the canvas */
+  updateWorld();
+  rig.apply();
+  renderer.compile(scene, camera);
+  renderFrame();
+  $('#gateSub').textContent = 'systems nominal — audio telemetry on entry';
+  $('#gate').classList.add('ready');
+  $('#gateBtn').addEventListener('click', () => {
+    $('#gate').classList.add('off');
+    audio.start();
+    intro.start(performance.now() / 1000);
+  }, { once: true });
+  booted = true;
+  requestAnimationFrame(loop);
+}
+
+/** Console / test hook — not part of the UI. */
+window.__survey = {
+  state, rig, U, planet, clouds, aurora, moon, sky, finalMat, atmoMat,
+  skipIntro: () => intro.finish(),
+  setView(lonDeg, latDeg, altMm){
+    rig.setView(THREE.MathUtils.degToRad(lonDeg), THREE.MathUtils.degToRad(latDeg), altMm);
+    rig.apply();
+  },
+  setSim(t){ state.simT = t; },
+};
+
+boot().catch(e => {
+  console.error(e);
+  fatal('Initialisation failed: ' + (e && e.message || e), 'Open the developer console for details.');
+});
+</script>
+</body>
+</html>

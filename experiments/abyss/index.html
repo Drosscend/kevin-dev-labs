@@ -1,0 +1,1927 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DESCENT // ABYSSAL SURVEY UNIT 7</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='5' fill='%2306232b'/><circle cx='8' cy='8' r='2' fill='%2348e0d0'/></svg>">
+<!--
+  DESCENT // ABYSSAL SURVEY UNIT 7
+  ────────────────────────────────
+  A single-file, infinite cinematic descent into a bioluminescent abyss.
+  WebGL2 + Three.js (CDN, the only external dependency). Everything else
+  — shaders, ecosystem, audio, HUD — is generated procedurally below.
+
+  Debug: open with  #d=1480  in the URL hash to start at a given depth.
+-->
+<style>
+  :root{
+    --ink:        #a9e6df;   /* phosphor cyan */
+    --ink-dim:    #57948f;
+    --ink-faint:  #2c5a58;
+    --alert:      #e8c170;
+    --abyss:      #000208;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:var(--abyss); }
+  body{
+    font-family:"IBM Plex Mono","Cascadia Code","JetBrains Mono",Consolas,Menlo,monospace;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    cursor:crosshair;
+  }
+  canvas#view{ position:fixed; inset:0; width:100%; height:100%; display:block; }
+
+  /* ── Intro / boot overlay ─────────────────────────────────────── */
+  #boot{
+    position:fixed; inset:0; z-index:40;
+    background:var(--abyss);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2.2rem; user-select:none;
+    transition:opacity 1.4s ease;
+  }
+  #boot.gone{ opacity:0; pointer-events:none; }
+  #boot .title{
+    font-size:clamp(1.4rem, 4.2vw, 3rem);
+    font-weight:400;
+    letter-spacing:.58em; text-indent:.58em;
+    color:var(--ink);
+    text-shadow:0 0 18px rgba(72,224,208,.35), 0 0 60px rgba(72,224,208,.12);
+    opacity:0; animation:fadein 2.6s ease .7s forwards;
+  }
+  #boot .sub{
+    font-size:clamp(.6rem, 1.4vw, .8rem);
+    letter-spacing:.46em; text-indent:.46em;
+    color:var(--ink-dim);
+    opacity:0; animation:fadein 2.2s ease 1.9s forwards;
+  }
+  #boot .rule{
+    width:min(34vw, 300px); height:1px;
+    background:linear-gradient(90deg, transparent, var(--ink-faint), transparent);
+    opacity:0; animation:fadein 2s ease 1.4s forwards;
+  }
+  #boot .dive{
+    margin-top:3rem;
+    font-size:.72rem; letter-spacing:.34em; text-indent:.34em;
+    color:var(--ink-dim);
+    border:1px solid var(--ink-faint);
+    padding:.85em 1.8em;
+    opacity:0; animation:fadein 1.6s ease 3.2s forwards, pulse 2.6s ease 4.8s infinite;
+    cursor:pointer; background:transparent;
+    font-family:inherit;
+  }
+  #boot .dive:hover{ color:var(--ink); border-color:var(--ink-dim); }
+  @keyframes fadein{ to{ opacity:1; } }
+  @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:.35; } }
+
+  /* white-out splash flash on entry */
+  #flash{
+    position:fixed; inset:0; z-index:35; pointer-events:none;
+    background:radial-gradient(ellipse at 50% 30%, #eafdff 0%, #9fd9e2 45%, #1d5a6e 100%);
+    opacity:0;
+  }
+  #flash.go{ animation:splash 1.5s cubic-bezier(.16,.84,.34,1) forwards; }
+  @keyframes splash{ 0%{opacity:0;} 8%{opacity:.95;} 100%{opacity:0;} }
+
+  /* ── HUD ──────────────────────────────────────────────────────── */
+  #hud{
+    position:fixed; left:1.4rem; bottom:1.3rem; z-index:20;
+    font-size:.72rem; line-height:1.75; letter-spacing:.12em;
+    color:var(--ink); opacity:0; transition:opacity 2s ease;
+    text-shadow:0 0 10px rgba(72,224,208,.3);
+    pointer-events:none; user-select:none; white-space:pre;
+  }
+  #hud.on{ opacity:.92; }
+  #hud .big{
+    font-size:1.7rem; letter-spacing:.1em; line-height:1.2;
+    color:#cdf5ef;
+  }
+  #hud .dim{ color:var(--ink-dim); }
+  #hud .zone{ color:var(--ink-dim); letter-spacing:.3em; font-size:.62rem; }
+  #hud.alert .zone, #hud.alert .stat{ color:var(--alert); text-shadow:0 0 10px rgba(232,193,112,.4); }
+  #hud .caret{ animation:blink 1.1s steps(1) infinite; }
+  @keyframes blink{ 50%{ opacity:0; } }
+
+  /* ── Mute ─────────────────────────────────────────────────────── */
+  #mute{
+    position:fixed; right:1.4rem; bottom:1.3rem; z-index:20;
+    font-family:inherit; font-size:.66rem; letter-spacing:.28em; text-indent:.28em;
+    color:var(--ink-dim); background:transparent;
+    border:1px solid var(--ink-faint); padding:.6em 1.1em;
+    cursor:pointer; opacity:0; transition:opacity 2s ease, color .2s, border-color .2s;
+  }
+  #mute.on{ opacity:.85; pointer-events:auto; }
+  #mute:hover{ color:var(--ink); border-color:var(--ink-dim); }
+
+  /* ── Error card ───────────────────────────────────────────────── */
+  #err{
+    position:fixed; inset:0; z-index:60; display:none;
+    align-items:center; justify-content:center;
+    background:var(--abyss);
+  }
+  #err.show{ display:flex; }
+  #err .card{
+    max-width:min(520px, 86vw);
+    border:1px solid var(--ink-faint);
+    padding:2.4rem 2.6rem;
+    background:linear-gradient(180deg, rgba(18,40,44,.35), rgba(2,8,10,.6));
+  }
+  #err h1{
+    font-size:.85rem; font-weight:400; letter-spacing:.4em;
+    color:var(--alert); margin-bottom:1.2rem;
+  }
+  #err p{ font-size:.74rem; line-height:1.9; letter-spacing:.06em; color:var(--ink-dim); }
+  #err p b{ color:var(--ink); font-weight:400; }
+</style>
+</head>
+<body>
+
+<canvas id="view"></canvas>
+
+<div id="boot">
+  <div class="title">DESCENT</div>
+  <div class="rule"></div>
+  <div class="sub">// ABYSSAL SURVEY UNIT 7</div>
+  <button class="dive" id="dive">[ CLICK TO DIVE ]</button>
+</div>
+<div id="flash"></div>
+
+<div id="hud"></div>
+<button id="mute" title="toggle sound">SND ◉</button>
+
+<div id="err"><div class="card">
+  <h1>SURVEY UNIT 7 — SYSTEM FAULT</h1>
+  <p id="errmsg">Telemetry lost.</p>
+</div></div>
+
+<!-- Boot watchdog: if the ES module below never reports in (offline CDN,
+     blocked network, ancient browser), surface a clean error card. -->
+<script>
+  window.__bootOK = false;
+  window.__fail = function (msg) {
+    var e = document.getElementById('err');
+    document.getElementById('errmsg').innerHTML = msg;
+    e.classList.add('show');
+    var b = document.getElementById('boot');
+    if (b) b.style.display = 'none';
+  };
+  setTimeout(function () {
+    if (!window.__bootOK) {
+      window.__fail('Unable to load the <b>Three.js</b> module from the CDN.<br>' +
+        'This experience needs a network connection on first load.<br><br>' +
+        '<b>Check your connection and reload.</b>');
+    }
+  }, 9000);
+  window.addEventListener('error', function (ev) {
+    if (!window.__bootOK && ev.message) {
+      window.__fail('Initialisation fault:<br><b>' + String(ev.message).slice(0, 160) + '</b>');
+    }
+  });
+</script>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ════════════════════════════════════════════════════════════════════
+   0. WEBGL2 GATE
+   ════════════════════════════════════════════════════════════════════ */
+const canvas = document.getElementById('view');
+const gl = canvas.getContext('webgl2', {
+  antialias: false, alpha: false, depth: true, stencil: false,
+  powerPreference: 'high-performance'
+});
+if (!gl) {
+  window.__bootOK = true; // stop the watchdog from double-reporting
+  window.__fail('This experience requires <b>WebGL2</b>, which this browser or GPU driver does not provide.<br><br>Try a recent Chrome, Edge or Firefox with hardware acceleration enabled.');
+  throw new Error('WebGL2 unavailable');
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   1. SHARED GLSL — integer-hash noise + physically-inspired water model
+   ════════════════════════════════════════════════════════════════════
+   The hash is an exact-integer construction, replicated bit-for-bit in
+   JS (section 7) so coral clusters can be planted precisely on the
+   GPU-displaced canyon wall.                                          */
+
+const NOISE_GLSL = /* glsl */`
+float hash3(ivec3 p){
+  uint h = uint(p.x)*1597334677u ^ uint(p.y)*3812015801u ^ uint(p.z)*2912787233u;
+  h = (h ^ (h >> 16u)) * 2246822519u;
+  h = (h ^ (h >> 13u)) * 3266489917u;
+  h ^= h >> 16u;
+  return float(h) * (1.0/4294967296.0);
+}
+float vnoise3(vec3 p){
+  vec3 f = fract(p);
+  ivec3 i = ivec3(floor(p));
+  f = f*f*(3.0-2.0*f);
+  float n000=hash3(i),               n100=hash3(i+ivec3(1,0,0));
+  float n010=hash3(i+ivec3(0,1,0)),  n110=hash3(i+ivec3(1,1,0));
+  float n001=hash3(i+ivec3(0,0,1)),  n101=hash3(i+ivec3(1,0,1));
+  float n011=hash3(i+ivec3(0,1,1)),  n111=hash3(i+ivec3(1,1,1));
+  return mix(mix(mix(n000,n100,f.x), mix(n010,n110,f.x), f.y),
+             mix(mix(n001,n101,f.x), mix(n011,n111,f.x), f.y), f.z);
+}
+float fbm4(vec3 p){
+  float a = 0.5, s = 0.0;
+  for(int i=0;i<4;i++){ s += a*vnoise3(p); p *= 2.0; a *= 0.5; }
+  return s; // ~[0,0.9375]
+}
+float fbm2(vec3 p){
+  return 0.6667*vnoise3(p) + 0.3333*vnoise3(p*2.0);
+}
+float n1(float x){ return vnoise3(vec3(x, 7.31, 2.17)); }
+`;
+
+/* Water model. All distances/depths in metres.
+   - uKd     : downwelling diffuse attenuation per channel (red dies first)
+   - uSigma  : view-path extinction per channel (fog density)
+   - ambient : in-scattered water colour for a view ray, depth + direction aware
+   - fogged  : surface colour after extinction + in-scatter               */
+const WATER_GLSL = /* glsl */`
+uniform float uTime;
+uniform float uDepth;     // camera depth, positive metres
+uniform float uLifeDim;   // global bioluminescence dimmer (the event)
+uniform vec3  uSunDirW;   // unit, points UP toward the sun
+uniform vec4  uPulses[4]; // xyz world pos, w birth time — plankton shockwaves
+
+vec3 kdWater(){ return vec3(0.36, 0.035, 0.0125); }
+vec3 sigmaView(){
+  return mix(vec3(0.105,0.056,0.040), vec3(0.140,0.085,0.068),
+             smoothstep(650.0, 1400.0, uDepth));
+}
+/* in-scattered radiance arriving along view direction dir (unit, world) */
+vec3 waterAmbient(vec3 dir){
+  float deff = max(uDepth - dir.y*40.0, 0.0);
+  vec3 amb = vec3(0.010, 0.060, 0.094) * 7.0 * exp(-kdWater()*deff);
+  float sd = max(dot(dir, uSunDirW), 0.0);
+  float caustic = 0.82 + 0.36*vnoise3(vec3(uTime*1.7, 3.7, uTime*0.9));
+  vec3 sunT = exp(-kdWater()*uDepth*1.05);
+  amb += (pow(sd, 220.0)*5.0 + pow(sd, 9.0)*0.55) * vec3(1.1,1.0,0.85) * sunT * caustic;
+  return amb;
+}
+vec3 fogTransmit(float d){ return exp(-sigmaView()*d); }
+/* full fog for opaque surfaces */
+vec3 fogged(vec3 col, vec3 dir, float dist){
+  vec3 T = fogTransmit(dist);
+  return col*T + waterAmbient(dir)*(1.0 - T);
+}
+`;
+
+/* ════════════════════════════════════════════════════════════════════
+   2. SHARED UNIFORMS  (single {value} objects referenced by every
+      material — one CPU write updates the whole scene)
+   ════════════════════════════════════════════════════════════════════ */
+const shared = {
+  uTime:     { value: 0 },
+  uDepth:    { value: 0 },
+  uCamY:     { value: 0 },
+  uCamPos:   { value: new THREE.Vector3() },
+  uLifeDim:  { value: 1 },
+  uSunDirW:  { value: new THREE.Vector3(0.34, 1.0, 0.22).normalize() },
+  uPulses:   { value: [new THREE.Vector4(0,0,0,-1e4), new THREE.Vector4(0,0,0,-1e4),
+                       new THREE.Vector4(0,0,0,-1e4), new THREE.Vector4(0,0,0,-1e4)] },
+  uProjScale:{ value: 800 },   // px = uProjScale * worldSize / dist
+  uInvPV:    { value: new THREE.Matrix4() },
+};
+/** Mix shared uniforms into a material-specific set. */
+const withShared = (own) => Object.assign({}, shared, own);
+
+/* ════════════════════════════════════════════════════════════════════
+   3. RENDERER & SCENE SKELETON
+   ════════════════════════════════════════════════════════════════════ */
+const renderer = new THREE.WebGLRenderer({ canvas, context: gl });
+renderer.autoClear = false;
+renderer.toneMapping = THREE.NoToneMapping;
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace; // we grade manually
+const MAX_DPR = 1.6;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_DPR));
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(68, innerWidth/innerHeight, 0.1, 900);
+scene.add(camera);
+
+/* ════════════════════════════════════════════════════════════════════
+   4. BACKGROUND — the water column itself (fullscreen triangle)
+   ════════════════════════════════════════════════════════════════════ */
+function makeBackground(){
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1,-1,0, 3,-1,0, -1,3,0]), 3));
+  const mat = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    uniforms: withShared({}),
+    depthWrite: false, depthTest: false,
+    vertexShader: /* glsl */`
+      uniform mat4 uInvPV;
+      uniform vec3 uCamPos;
+      out vec3 vDir;
+      void main(){
+        // unproject the far plane corner → exact per-pixel ray after lerp
+        vec4 p = uInvPV * vec4(position.xy, 0.9, 1.0);
+        vDir = p.xyz/p.w - uCamPos;
+        gl_Position = vec4(position.xy, 0.99999, 1.0);
+      }`,
+    fragmentShader: /* glsl */`
+      ${NOISE_GLSL} ${WATER_GLSL}
+      in vec3 vDir;
+      out vec4 outColor;
+      void main(){
+        vec3 dir = normalize(vDir);
+        vec3 col = waterAmbient(dir);
+        // barely-there drifting murk so the void is never a flat gradient
+        float murk = fbm2(vec3(dir.x*2.0, dir.y*2.0 - uTime*0.012, dir.z*2.0));
+        col *= 0.92 + 0.16*murk;
+        outColor = vec4(col, 1.0);
+      }`
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.frustumCulled = false; m.renderOrder = -10;
+  return m;
+}
+scene.add(makeBackground());
+
+/* ════════════════════════════════════════════════════════════════════
+   5. ECOSYSTEM — plankton, marine snow, splash bubbles
+   ════════════════════════════════════════════════════════════════════ */
+
+/** Soft round-sprite fragment shader for additive points. */
+const POINT_FS = /* glsl */`
+  ${NOISE_GLSL} ${WATER_GLSL}
+  in vec3 vCol; in float vFade;
+  out vec4 outColor;
+  void main(){
+    vec2 q = gl_PointCoord - 0.5;
+    float r2 = dot(q,q)*4.0;
+    if(r2 > 1.0) discard;
+    float disc = exp(-r2*3.4) * (1.0-r2);
+    vec3 col = vCol * disc;
+    col += vCol * exp(-r2*14.0) * 0.9;          // hot core
+    outColor = vec4(col * vFade, 1.0);
+  }`;
+
+/**
+ * Bioluminescent plankton — GPU-wrapped point cloud around the camera.
+ * Reacts to the submersible passing through: expanding rings of light
+ * (uPulses) plus a local proximity glow.
+ */
+class PlanktonField {
+  constructor(count = 5500){
+    const pos = new Float32Array(count*3), seed = new Float32Array(count*4);
+    for(let i=0;i<count;i++){
+      pos[i*3+0] = (Math.random()-0.5)*92;
+      pos[i*3+1] = (Math.random()-0.5)*150;
+      pos[i*3+2] = (Math.random()-0.5)*92;
+      seed[i*4+0] = Math.random();             // hue pick
+      seed[i*4+1] = Math.random()*Math.PI*2;   // twinkle phase
+      seed[i*4+2] = 0.55 + Math.random()*0.9;  // twinkle speed
+      seed[i*4+3] = 0.6 + Math.random()*1.0;   // size
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    g.setAttribute('aSeed',    new THREE.BufferAttribute(seed,4));
+    const mat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      uniforms: withShared({}),
+      transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL}
+        uniform vec3  uCamPos;
+        uniform float uProjScale;
+        in vec4 aSeed;
+        out vec3 vCol; out float vFade;
+        void main(){
+          // wrap the static cloud around the camera (infinite descent)
+          vec3 wp = position;
+          wp.x = uCamPos.x + mod(wp.x - uCamPos.x + 46.0, 92.0) - 46.0;
+          wp.y = uCamPos.y + mod(wp.y - uCamPos.y + 75.0, 150.0) - 75.0;
+          wp.z = uCamPos.z + mod(wp.z - uCamPos.z + 46.0, 92.0) - 46.0;
+          // slow individual drift
+          wp += 0.6*vec3(vnoise3(wp*0.11 + uTime*0.05)-0.5,
+                         vnoise3(wp.zxy*0.11 - uTime*0.04)-0.5,
+                         vnoise3(wp.yzx*0.11 + uTime*0.03)-0.5);
+
+          float tw = 0.42 + 0.58*pow(0.5+0.5*sin(uTime*aSeed.z*2.4 + aSeed.y*7.0), 3.0);
+
+          // shockwave pulses rippling through the swarm
+          float boost = 0.0;
+          for(int k=0;k<4;k++){
+            float age = uTime - uPulses[k].w;
+            if(age > 0.0 && age < 9.0){
+              float d = distance(wp, uPulses[k].xyz);
+              float front = age * 9.5;
+              float band = exp(-pow(d - front, 2.0) / 14.0);
+              boost += band * exp(-age*0.55) * 2.6;
+            }
+          }
+          // local glow when the unit slides right through them
+          float dc = distance(wp, uCamPos);
+          boost += exp(-dc*dc*0.04) * 0.9;
+
+          float bright = (tw + boost);
+          // population fades in through the twilight zone
+          float pop = smoothstep(140.0, 300.0, uDepth);
+          pop *= 0.75 + 0.25*smoothstep(900.0, 1400.0, uDepth); // denser at depth
+
+          vec3 cyan = vec3(0.22, 0.95, 1.00), blue = vec3(0.30, 0.50, 1.00);
+          vec3 tint = mix(cyan, blue, aSeed.x);
+          if(aSeed.x > 0.94) tint = vec3(1.00, 0.52, 0.22);   // rare amber ones
+          vec3 T = fogTransmit(dc);
+          vCol = tint * bright * 2.4 * pop * uLifeDim * T;
+          vFade = 1.0;
+
+          vec4 mv = viewMatrix * vec4(wp, 1.0);
+          gl_Position = projectionMatrix * mv;
+          float px = uProjScale * (0.05 + 0.075*aSeed.w * (1.0+boost*0.35)) / max(-mv.z, 1.0);
+          gl_PointSize = clamp(px, 1.0, 42.0);
+        }`,
+      fragmentShader: POINT_FS
+    });
+    this.obj = new THREE.Points(g, mat);
+    this.obj.frustumCulled = false;
+  }
+}
+
+/** Marine snow — neutral detritus drifting up past the descending unit. */
+class MarineSnow {
+  constructor(count = 3000){
+    const pos = new Float32Array(count*3), seed = new Float32Array(count*2);
+    for(let i=0;i<count;i++){
+      pos[i*3+0] = (Math.random()-0.5)*70;
+      pos[i*3+1] = (Math.random()-0.5)*110;
+      pos[i*3+2] = (Math.random()-0.5)*70;
+      seed[i*2+0] = Math.random();
+      seed[i*2+1] = Math.random();
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    g.setAttribute('aSeed',    new THREE.BufferAttribute(seed,2));
+    const mat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      uniforms: withShared({}),
+      transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL}
+        uniform vec3 uCamPos; uniform float uProjScale;
+        in vec2 aSeed;
+        out vec3 vCol; out float vFade;
+        void main(){
+          vec3 wp = position;
+          // snow sinks slowly in world space; camera descends much faster,
+          // so relative motion reads as an upward blizzard — selling descent
+          wp.y -= uTime * (0.10 + aSeed.x*0.12);
+          wp.x += sin(uTime*0.3 + aSeed.y*40.0)*0.6;
+          wp.x = uCamPos.x + mod(wp.x - uCamPos.x + 35.0, 70.0) - 35.0;
+          wp.y = uCamPos.y + mod(wp.y - uCamPos.y + 55.0, 110.0) - 55.0;
+          wp.z = uCamPos.z + mod(wp.z - uCamPos.z + 35.0, 70.0) - 35.0;
+
+          float dc = distance(wp, uCamPos);
+          vec3 T = fogTransmit(dc);
+          // lit faintly by ambient light above 400m, then by nothing at all —
+          // headlight term keeps a few motes visible in the black
+          vec3 amb = waterAmbient(normalize(vec3(0.2,1.0,0.1))) * 2.5;
+          float head = exp(-dc*0.085) * 1.5;
+          vCol = (amb + vec3(0.42,0.50,0.55)*head) * (0.5+0.5*aSeed.y) * T;
+          vFade = 1.0;
+          vec4 mv = viewMatrix * vec4(wp, 1.0);
+          gl_Position = projectionMatrix * mv;
+          float px = uProjScale * (0.012 + 0.02*aSeed.x) / max(-mv.z, 1.0);
+          gl_PointSize = clamp(px, 1.0, 7.0);
+        }`,
+      fragmentShader: POINT_FS
+    });
+    this.obj = new THREE.Points(g, mat);
+    this.obj.frustumCulled = false;
+  }
+}
+
+/** One-shot bubble burst for the splash entry. */
+class BubbleBurst {
+  constructor(count = 320){
+    const pos = new Float32Array(count*3), seed = new Float32Array(count*3);
+    for(let i=0;i<count;i++){
+      pos[i*3+0]=(Math.random()-0.5)*7; pos[i*3+1]=(Math.random()-0.5)*9-3; pos[i*3+2]=(Math.random()-0.5)*7-4;
+      seed[i*3+0]=Math.random(); seed[i*3+1]=Math.random(); seed[i*3+2]=Math.random();
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    g.setAttribute('aSeed',    new THREE.BufferAttribute(seed,3));
+    this.uniforms = withShared({ uBirth: { value: -100 } });
+    const mat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3, uniforms: this.uniforms,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL}
+        uniform vec3 uCamPos; uniform float uProjScale; uniform float uBirth;
+        in vec3 aSeed;
+        out vec3 vCol; out float vFade;
+        void main(){
+          float age = uTime - uBirth;
+          float life = 2.2 + aSeed.x*1.4;
+          float a01 = clamp(age/life, 0.0, 1.0);
+          vec3 wp = position + uCamPos;
+          wp.y += age * (2.5 + aSeed.y*3.5);            // bubbles race upward
+          wp.x += sin(age*7.0 + aSeed.z*30.0)*0.25;
+          float k = (1.0-a01);
+          vCol = vec3(0.75, 0.95, 1.0) * 2.2 * k*k;
+          vFade = step(age, life) * step(0.0, age);
+          vec4 mv = viewMatrix * vec4(wp, 1.0);
+          gl_Position = projectionMatrix * mv;
+          float px = uProjScale * (0.02 + 0.07*aSeed.x) / max(-mv.z, 1.0);
+          gl_PointSize = clamp(px, 1.0, 26.0);
+        }`,
+      fragmentShader: /* glsl */`
+        in vec3 vCol; in float vFade;
+        out vec4 outColor;
+        void main(){
+          vec2 q = gl_PointCoord - 0.5;
+          float r = length(q)*2.0;
+          if(r>1.0) discard;
+          float ring = smoothstep(0.45,0.85,r) * smoothstep(1.0,0.88,r); // thin shell
+          float core = exp(-r*r*9.0)*0.35;
+          outColor = vec4(vCol*(ring+core)*vFade, 1.0);
+        }`
+    });
+    this.obj = new THREE.Points(g, mat);
+    this.obj.frustumCulled = false; this.obj.visible = false;
+  }
+  fire(t){ this.uniforms.uBirth.value = t; this.obj.visible = true; }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   6. JELLYFISH — instanced pulsating bells + trailing tentacle ribbons
+   ════════════════════════════════════════════════════════════════════ */
+const JELLY_COUNT = 14, RIBBONS_PER = 10;
+
+class JellyfishSwarm {
+  constructor(){
+    this.group = new THREE.Group();
+    this.items = [];
+    for(let i=0;i<JELLY_COUNT;i++){
+      this.items.push({
+        x:0, y:0, z:0, scale:1, phase: Math.random(),
+        speed: 0.7+Math.random()*0.6, hue: Math.random(),
+        drift: Math.random()*Math.PI*2, alive:false
+      });
+    }
+    this._buildBells(); this._buildRibbons();
+    this._m4 = new THREE.Matrix4(); this._q = new THREE.Quaternion();
+    this._s = new THREE.Vector3(); this._p = new THREE.Vector3();
+  }
+  _bellCommon(){ return /* glsl */`
+    float bellPulse(float t, float phase, float speed){
+      return sin(t*1.9*speed + phase*6.28318);
+    }`;
+  }
+  _buildBells(){
+    const geo = new THREE.SphereGeometry(1, 24, 16, 0, Math.PI*2, 0, Math.PI*0.62);
+    const aPhase = new Float32Array(JELLY_COUNT), aHue = new Float32Array(JELLY_COUNT),
+          aSpeed = new Float32Array(JELLY_COUNT);
+    for(let i=0;i<JELLY_COUNT;i++){
+      aPhase[i]=this.items[i].phase; aHue[i]=this.items[i].hue; aSpeed[i]=this.items[i].speed;
+    }
+    geo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(aPhase,1));
+    geo.setAttribute('aHue',   new THREE.InstancedBufferAttribute(aHue,1));
+    geo.setAttribute('aSpeed', new THREE.InstancedBufferAttribute(aSpeed,1));
+    const mat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      uniforms: withShared({}),
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      vertexShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL} ${this._bellCommon()}
+        in float aPhase; in float aHue; in float aSpeed;
+        out vec3 vN; out vec3 vWp; out vec2 vUv; out float vPulse; out float vHue; out float vLat;
+        void main(){
+          vUv = uv; vHue = aHue;
+          float c = bellPulse(uTime, aPhase, aSpeed);
+          vPulse = c;
+          float lat = 1.0 - uv.y;                // SphereGeometry: uv.y=1 at apex → remap to 0 apex → 1 rim
+          vLat = lat;
+          vec3 p = position;
+          p.xz *= 1.0 + 0.15*c*(0.30+0.70*lat);  // bell swells
+          p.y  *= 1.0 - 0.11*c;                  // and squashes
+          float curl = sin(uTime*1.9*aSpeed + aPhase*6.28318 - lat*2.4);
+          p.xz *= 1.0 + 0.10*curl*smoothstep(0.55,1.0,lat); // rim flare lag
+          // wobble
+          p.x += 0.05*sin(uTime*0.7 + aPhase*9.0);
+          vec4 wp4 = instanceMatrix * vec4(p, 1.0);
+          vWp = wp4.xyz;
+          vN = normalize(mat3(instanceMatrix) * normalize(mix(normal, normalize(p), 0.35)));
+          gl_Position = projectionMatrix * viewMatrix * wp4;
+        }`,
+      fragmentShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL}
+        uniform vec3 uCamPos;
+        in vec3 vN; in vec3 vWp; in vec2 vUv; in float vPulse; in float vHue; in float vLat;
+        out vec4 outColor;
+        void main(){
+          vec3 V = normalize(uCamPos - vWp);
+          float dist = distance(uCamPos, vWp);
+          vec3 N = normalize(vN);
+          // translucent membrane: strong rim, glowing organ core at the apex,
+          // faint radial canals — a cheap stand-in for subsurface scattering
+          float rim = pow(1.0 - abs(dot(N, V)), 2.4);
+          float core = exp(-vLat*vLat*9.0) * (0.65 + 0.5*vPulse);
+          float canals = pow(0.5 + 0.5*cos(vUv.x*6.28318*16.0), 8.0) * 0.35 * smoothstep(0.2,0.8,vLat);
+          vec3 tint = mix(vec3(0.30,0.72,1.0), vec3(1.0,0.38,0.78), step(0.34, vHue));
+          if(vHue > 0.72) tint = vec3(0.45,1.0,0.74);
+          float glow = rim*1.5 + core*1.3 + canals;
+          glow *= 0.8 + 0.25*vPulse;
+          vec3 col = tint * glow * 2.6 * uLifeDim;
+          col *= fogTransmit(dist);
+          outColor = vec4(col, 1.0);
+        }`
+    });
+    this.bells = new THREE.InstancedMesh(geo, mat, JELLY_COUNT);
+    this.bells.frustumCulled = false;
+    this.group.add(this.bells);
+  }
+  _buildRibbons(){
+    const N = JELLY_COUNT*RIBBONS_PER;
+    const geo = new THREE.PlaneGeometry(1, 1, 1, 22);
+    const aRib = new Float32Array(N*4), aPhase = new Float32Array(N), aHue = new Float32Array(N);
+    for(let j=0;j<JELLY_COUNT;j++){
+      for(let r=0;r<RIBBONS_PER;r++){
+        const i = j*RIBBONS_PER + r;
+        const oral = r < 3; // 3 thick oral arms + 7 thin tentacles
+        aRib[i*4+0] = (r/RIBBONS_PER)*Math.PI*2 + Math.random()*0.5;
+        aRib[i*4+1] = oral ? 0.18 : 0.55 + Math.random()*0.35; // root radius on bell
+        aRib[i*4+2] = oral ? 1.6+Math.random() : 2.6 + Math.random()*1.8; // length
+        aRib[i*4+3] = oral ? 0.16 : 0.035;                    // width
+        aPhase[i] = this.items[j].phase; aHue[i] = this.items[j].hue;
+      }
+    }
+    geo.setAttribute('aRib',   new THREE.InstancedBufferAttribute(aRib,4));
+    geo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(aPhase,1));
+    geo.setAttribute('aHue',   new THREE.InstancedBufferAttribute(aHue,1));
+    const mat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      uniforms: withShared({}),
+      transparent: true, depthWrite: false, side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      vertexShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL}
+        in vec4 aRib; in float aPhase; in float aHue;
+        out float vS; out float vHue; out vec3 vWp; out float vGlowline;
+        void main(){
+          float s = 1.0 - (uv.y);          // 0 at root → 1 at tip
+          vS = s; vHue = aHue;
+          float ang = aRib.x, rootR = aRib.y, len = aRib.z, wid = aRib.w;
+          vec3 root = vec3(cos(ang)*rootR, 0.02, sin(ang)*rootR);
+          // trailing curve: lagging sway, drawn upward by each bell kick
+          float ph = uTime*1.4 + aPhase*6.28318;
+          vec3 p = root;
+          p.y -= s*len * (1.0 + 0.10*sin(ph - 2.0 - s*2.0));
+          p.x += sin(ph*0.9 - s*4.5 + ang)* (0.10+0.45*s*s);
+          p.z += cos(ph*0.8 - s*4.0 + ang*1.3)* (0.10+0.45*s*s);
+          vec4 wp4 = instanceMatrix * vec4(p, 1.0);
+          // billboard the ribbon width in view space
+          vec4 mv = viewMatrix * wp4;
+          mv.x += (uv.x-0.5) * wid * (1.0 - s*0.72) * length(vec3(instanceMatrix[0]));
+          vWp = wp4.xyz;
+          // a photocyte pulse streaming down the tentacle
+          vGlowline = pow(0.5 + 0.5*sin(s*22.0 - uTime*5.0 + aPhase*40.0), 6.0);
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL}
+        uniform vec3 uCamPos;
+        in float vS; in float vHue; in vec3 vWp; in float vGlowline;
+        out vec4 outColor;
+        void main(){
+          float dist = distance(uCamPos, vWp);
+          vec3 tint = mix(vec3(0.30,0.72,1.0), vec3(1.0,0.38,0.78), step(0.34, vHue));
+          if(vHue > 0.72) tint = vec3(0.45,1.0,0.74);
+          float a = (1.0 - vS) * 0.55 + vGlowline*0.9;
+          vec3 col = tint * a * 0.85 * uLifeDim * fogTransmit(dist);
+          outColor = vec4(col, 1.0);
+        }`
+    });
+    this.ribbons = new THREE.InstancedMesh(geo, mat, N);
+    this.ribbons.frustumCulled = false;
+    this.group.add(this.ribbons);
+  }
+  /** Recycle jellies through a window around the camera; only below 210 m. */
+  update(t, dt, camPos){
+    const top = camPos.y + 45, bottom = camPos.y - 95;
+    for(let j=0;j<JELLY_COUNT;j++){
+      const it = this.items[j];
+      if(!it.alive || it.y > top){
+        it.alive = true;
+        it.y = bottom + Math.random()*40 - 20;
+        const r = 9 + Math.random()*42, a = Math.random()*Math.PI*2;
+        it.x = camPos.x + Math.cos(a)*r;
+        it.z = camPos.z + Math.sin(a)*r;
+        it.scale = 0.55 + Math.random()*1.7;
+      }
+      // gentle pulsed ascent + drift
+      const kick = 0.5 + 0.5*Math.sin(t*1.9*it.speed + it.phase*Math.PI*2);
+      it.y += (0.06 + 0.30*kick*kick) * it.scale * dt;
+      it.x += Math.sin(t*0.11 + it.drift)*0.25*dt;
+      it.z += Math.cos(t*0.13 + it.drift)*0.25*dt;
+
+      this._p.set(it.x, it.y, it.z);
+      this._s.setScalar(it.scale);
+      this._q.setFromAxisAngle({x:0,y:1,z:0}, it.drift + t*0.02);
+      this._m4.compose(this._p, this._q, this._s);
+      this.bells.setMatrixAt(j, this._m4);
+      for(let r=0;r<RIBBONS_PER;r++) this.ribbons.setMatrixAt(j*RIBBONS_PER+r, this._m4);
+    }
+    this.bells.instanceMatrix.needsUpdate = true;
+    this.ribbons.instanceMatrix.needsUpdate = true;
+    const vis = shared.uDepth.value > 195;
+    this.group.visible = vis;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   7. SHARED JS NOISE — exact replica of the GLSL integer-hash noise
+   ════════════════════════════════════════════════════════════════════ */
+const NoiseJS = (() => {
+  function hash3(x, y, z){
+    let h = (Math.imul(x|0, 1597334677) ^ Math.imul(y|0, 3812015801) ^ Math.imul(z|0, 2912787233)) >>> 0;
+    h = Math.imul(h ^ (h >>> 16), 2246822519) >>> 0;
+    h = Math.imul(h ^ (h >>> 13), 3266489917) >>> 0;
+    h = (h ^ (h >>> 16)) >>> 0;
+    return h / 4294967296;
+  }
+  function vnoise3(px, py, pz){
+    const ix = Math.floor(px), iy = Math.floor(py), iz = Math.floor(pz);
+    let fx = px-ix, fy = py-iy, fz = pz-iz;
+    fx = fx*fx*(3-2*fx); fy = fy*fy*(3-2*fy); fz = fz*fz*(3-2*fz);
+    const n000=hash3(ix,iy,iz),     n100=hash3(ix+1,iy,iz),
+          n010=hash3(ix,iy+1,iz),   n110=hash3(ix+1,iy+1,iz),
+          n001=hash3(ix,iy,iz+1),   n101=hash3(ix+1,iy,iz+1),
+          n011=hash3(ix,iy+1,iz+1), n111=hash3(ix+1,iy+1,iz+1);
+    const a = n000+(n100-n000)*fx, b = n010+(n110-n010)*fx,
+          c = n001+(n101-n001)*fx, d = n011+(n111-n011)*fx;
+    return (a+(b-a)*fy) + ((c+(d-c)*fy) - (a+(b-a)*fy))*fz;
+  }
+  function fbm4(px, py, pz){
+    let a=0.5, s=0;
+    for(let i=0;i<4;i++){ s += a*vnoise3(px,py,pz); px*=2; py*=2; pz*=2; a*=0.5; }
+    return s;
+  }
+  function n1(x){ return vnoise3(x, 7.31, 2.17); }
+  return { hash3, vnoise3, fbm4, n1 };
+})();
+
+/* ════════════════════════════════════════════════════════════════════
+   8. CANYON WALLS + GLOWING CORAL — procedural rock below ~1000 m
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Radius field of the canyon "throat" — MUST stay in sync between the
+   GLSL below and radiusAtJS (coral planting + light placement). */
+const RADIUS_GLSL = /* glsl */`
+float radiusAt(vec3 dirUnit, float wy){
+  vec3 q = vec3(dirUnit.x*2.3, wy*0.021, dirUnit.z*2.3);
+  float f = fbm4(q);
+  float squeeze = n1(wy*0.0045);
+  float R = 34.0 + (f-0.469)*54.0 + (squeeze-0.5)*34.0;
+  R = max(R, 13.0);
+  R += max(0.0, wy + 950.0) * 2.4;   // walls only exist below ~950 m
+  return R;
+}`;
+function radiusAtJS(dx, dz, wy){
+  const f = NoiseJS.fbm4(dx*2.3, wy*0.021, dz*2.3);
+  const squeeze = NoiseJS.n1(wy*0.0045);
+  let R = 34.0 + (f-0.469)*54.0 + (squeeze-0.5)*34.0;
+  R = Math.max(R, 13.0);
+  R += Math.max(0.0, wy + 950.0) * 2.4;
+  return R;
+}
+
+const CORAL_LIGHTS = 8;
+const PALETTES = [
+  [1.00,0.30,0.85], [1.00,0.58,0.18], [0.18,0.95,1.00],
+  [0.62,0.40,1.00], [0.30,1.00,0.52]
+];
+
+class Canyon {
+  constructor(){
+    // unit-direction cylinder shell; all displacement happens in the VS
+    const RAD = 110, SEG = 150, H = 440;
+    const verts = new Float32Array((RAD+1)*(SEG+1)*3);
+    const idx = [];
+    let v = 0;
+    for(let j=0;j<=SEG;j++){
+      const y = (j/SEG - 0.5)*H;
+      for(let i=0;i<=RAD;i++){
+        const a = (i/RAD)*Math.PI*2;
+        verts[v++] = Math.cos(a); verts[v++] = y; verts[v++] = Math.sin(a);
+      }
+    }
+    for(let j=0;j<SEG;j++){
+      for(let i=0;i<RAD;i++){
+        const a=j*(RAD+1)+i, b=a+1, c=a+RAD+1, d=c+1;
+        idx.push(a,b,c, b,d,c);  // wound to face inward
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(verts,3));
+    geo.setIndex(idx);
+
+    this.lightsPos = []; this.lightsCol = [];
+    for(let i=0;i<CORAL_LIGHTS;i++){
+      this.lightsPos.push(new THREE.Vector4(0,-1e6,0,0));
+      this.lightsCol.push(new THREE.Vector3(0,0,0));
+    }
+    this.uniforms = withShared({
+      uLightPos: { value: this.lightsPos },
+      uLightCol: { value: this.lightsCol },
+    });
+    const mat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      uniforms: this.uniforms,
+      vertexShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL} ${RADIUS_GLSL}
+        uniform float uCamY;
+        out vec3 vN; out vec3 vWp;
+        void main(){
+          vec3 dir = normalize(vec3(position.x, 0.0, position.z));
+          float wy = uCamY + position.y;
+          // rotate dir by a small epsilon for tangential finite differences
+          const float ca = 0.9997, sa = 0.0249974;  // cos/sin(0.025)
+          vec3 dirT = vec3(dir.x*ca - dir.z*sa, 0.0, dir.x*sa + dir.z*ca);
+          float R  = radiusAt(dir,  wy);
+          float Rt = radiusAt(dirT, wy);
+          float Ry = radiusAt(dir,  wy + 0.9);
+          vec3 P  = vec3(dir.x*R,  wy,        dir.z*R);
+          vec3 Pt = vec3(dirT.x*Rt, wy,       dirT.z*Rt);
+          vec3 Py = vec3(dir.x*Ry, wy + 0.9,  dir.z*Ry);
+          vN = normalize(cross(normalize(Pt-P), normalize(Py-P)));
+          vWp = P;
+          gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
+        }`,
+      fragmentShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL}
+        uniform vec3 uCamPos;
+        uniform vec4 uLightPos[${CORAL_LIGHTS}];
+        uniform vec3 uLightCol[${CORAL_LIGHTS}];
+        in vec3 vN; in vec3 vWp;
+        out vec4 outColor;
+        void main(){
+          vec3 N = normalize(vN);
+          float dist = distance(uCamPos, vWp);
+          vec3 V = normalize(uCamPos - vWp);
+          // rock material: strata + grain
+          float strat = 0.5 + 0.5*sin(vWp.y*0.16 + fbm2(vWp*0.05)*5.0);
+          float grain = fbm2(vWp*0.55);
+          vec3 albedo = mix(vec3(0.190,0.170,0.150), vec3(0.290,0.260,0.230), strat) * (0.65+0.7*grain);
+          // micro normal detail
+          N = normalize(N + 0.45*vec3(vnoise3(vWp*1.7)-0.5, vnoise3(vWp.yzx*1.7)-0.5, vnoise3(vWp.zxy*1.7)-0.5));
+
+          vec3 col = vec3(0.0);
+          // bioluminescent coral lights (wrap diffuse so glow hugs the rock)
+          for(int i=0;i<${CORAL_LIGHTS};i++){
+            vec3 Ld = uLightPos[i].xyz - vWp;
+            float d2 = dot(Ld,Ld);
+            float att = uLightPos[i].w / (1.0 + d2*0.22);
+            float ndl = clamp((dot(N, normalize(Ld)) + 0.55) / 1.55, 0.0, 1.0);
+            col += albedo * uLightCol[i] * ndl * att;
+          }
+          // the unit's weak headlight, just enough to read nearby rock
+          float head = pow(max(dot(N, V), 0.0), 1.4) * exp(-dist*0.06);
+          col += albedo * vec3(0.42,0.62,0.72) * head * 0.9;
+          // faint ambient from above (only matters 950–1100 m)
+          col += albedo * waterAmbient(vec3(0.0,1.0,0.0)) * 0.35 * clamp(dot(N,vec3(0,1,0))*0.5+0.5, 0.0, 1.0);
+          // chemosynthetic film in crevices
+          float crev = smoothstep(0.60, 0.95, fbm2(vWp*0.23));
+          col += vec3(0.05,0.30,0.30) * crev * 0.06 * uLifeDim;
+
+          col = fogged(col, normalize(vWp-uCamPos), dist);
+          outColor = vec4(col, 1.0);
+        }`
+    });
+    this.mesh = new THREE.Mesh(geo, mat);
+    this.mesh.frustumCulled = false;
+  }
+}
+
+/**
+ * Glowing coral & anemone clusters planted on the canyon wall.
+ * Ring buffer of clusters regenerated per 60 m depth chunk, seeded by the
+ * exact same integer-hash noise the GPU displaces the wall with.
+ */
+class CoralField {
+  constructor(){
+    this.CHUNK = 60;
+    this.N_CLUSTERS = 40; this.PTS = 90;
+    this.clusters = []; // {x,y,z, nx,nz, pal, phase, on}
+    const total = this.N_CLUSTERS*this.PTS;
+    this.pos  = new Float32Array(total*3);
+    this.col  = new Float32Array(total*3);
+    this.seed = new Float32Array(total*4); // size, phase, twinkle, clusterPhase
+    const g = new THREE.BufferGeometry();
+    this.aPos  = new THREE.BufferAttribute(this.pos,3);  g.setAttribute('position', this.aPos);
+    this.aCol  = new THREE.BufferAttribute(this.col,3);  g.setAttribute('aCol',  this.aCol);
+    this.aSeed = new THREE.BufferAttribute(this.seed,4); g.setAttribute('aSeed', this.aSeed);
+    const mat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3, uniforms: withShared({}),
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL}
+        uniform vec3 uCamPos; uniform float uProjScale;
+        in vec3 aCol; in vec4 aSeed;
+        out vec3 vCol; out float vFade;
+        void main(){
+          vec3 wp = position;
+          float dc = distance(wp, uCamPos);
+          // anemone breathing: whole cluster swells in sync, each polyp offset
+          float breathe = 0.62 + 0.38*sin(uTime*0.55 + aSeed.w*6.28318 + aSeed.y*1.8);
+          float tw = 0.55 + 0.45*sin(uTime*aSeed.z*3.0 + aSeed.y*9.0);
+          vCol = aCol * breathe * tw * 4.6 * uLifeDim * fogTransmit(dc);
+          vFade = 1.0;
+          vec4 mv = viewMatrix * vec4(wp, 1.0);
+          gl_Position = projectionMatrix * mv;
+          float px = uProjScale * aSeed.x * (0.8+0.3*breathe) / max(-mv.z, 1.0);
+          gl_PointSize = clamp(px, 1.0, 58.0);
+        }`,
+      fragmentShader: POINT_FS
+    });
+    this.obj = new THREE.Points(g, mat);
+    this.obj.frustumCulled = false;
+    this.builtChunk = null;
+  }
+  /** Deterministic per-chunk cluster layout (seeded by chunk index). */
+  _genChunk(ci, slotStart, slots){
+    const y0 = -ci*this.CHUNK;
+    let rng = (ci*2654435761) >>> 0;
+    const rand = () => { rng = (Math.imul(rng ^ (rng>>>15), 2246822519) + 374761393) >>> 0; return rng/4294967296; };
+    for(let s=0;s<slots;s++){
+      const slot = slotStart+s;
+      const cl = this.clusters[slot];
+      const wy = y0 - rand()*this.CHUNK;
+      const ang = rand()*Math.PI*2;
+      const dx = Math.cos(ang), dz = Math.sin(ang);
+      const R = radiusAtJS(dx, dz, wy);
+      cl.x = dx*(R-0.55); cl.y = wy; cl.z = dz*(R-0.55);
+      cl.nx = -dx; cl.nz = -dz;
+      cl.pal = PALETTES[(rand()*PALETTES.length)|0];
+      cl.phase = rand();
+      cl.on = wy < -1020 && rand() > 0.18; // sparse near the rim, none above
+      cl.intensity = 6 + rand()*10;
+      // write the point cloud for this cluster
+      const spread = 1.2 + rand()*1.6, tall = rand()*0.9;
+      for(let p=0;p<this.PTS;p++){
+        const k = (slot*this.PTS+p)*3, k4 = (slot*this.PTS+p)*4;
+        if(!cl.on){ this.pos[k+1] = 1e6; continue; } // park dead clusters away
+        const gx=(rand()+rand()-1)*spread, gz=(rand()+rand()-1)*spread, gy=(rand()+rand()-1)*spread*0.7;
+        const inAxis = rand()*1.1 + tall*rand();
+        this.pos[k+0] = cl.x + gx + cl.nx*inAxis;
+        this.pos[k+1] = cl.y + gy + 0.3;
+        this.pos[k+2] = cl.z + gz + cl.nz*inAxis;
+        const jitter = 0.75 + rand()*0.5;
+        this.col[k+0] = cl.pal[0]*jitter; this.col[k+1] = cl.pal[1]*jitter; this.col[k+2] = cl.pal[2]*jitter;
+        this.seed[k4+0] = (rand()<0.18 ? 0.5+rand()*0.6 : 0.10+rand()*0.22); // a few big anemone hearts
+        this.seed[k4+1] = rand();
+        this.seed[k4+2] = 0.4 + rand()*1.1;
+        this.seed[k4+3] = cl.phase;
+      }
+    }
+  }
+  /** Rebuild the ring buffer when the camera enters a new chunk. */
+  update(camY, canyon, t){
+    const ci = Math.max(0, Math.floor(-camY / this.CHUNK));
+    if(this.builtChunk === null){
+      this.clusters = Array.from({length:this.N_CLUSTERS}, () => ({x:0,y:1e6,z:0,nx:0,nz:0,pal:PALETTES[0],phase:0,on:false,intensity:0}));
+    }
+    if(this.builtChunk !== ci){
+      this.builtChunk = ci;
+      // lay out chunks ci-2 … ci+5 across the 40 slots (5 clusters per chunk)
+      const PER = 5;
+      for(let o=-2;o<6;o++){
+        const c = ci+o; if(c<0) continue;
+        const slotStart = (((c % 8)+8)%8) * PER;
+        this._genChunk(c, slotStart, PER);
+      }
+      this.aPos.needsUpdate = true; this.aCol.needsUpdate = true; this.aSeed.needsUpdate = true;
+    }
+    // feed the nearest, brightest clusters to the wall shader as lights
+    const live = this.clusters.filter(c => c.on);
+    live.sort((a,b) => (Math.abs(a.y-camY) - Math.abs(b.y-camY)));
+    for(let i=0;i<CORAL_LIGHTS;i++){
+      const Lp = canyon.lightsPos[i], Lc = canyon.lightsCol[i];
+      if(i < live.length){
+        const c = live[i];
+        const breathe = 0.62 + 0.38*Math.sin(t*0.55 + c.phase*Math.PI*2);
+        Lp.set(c.x + c.nx*1.4, c.y, c.z + c.nz*1.4, c.intensity * breathe * shared.uLifeDim.value);
+        Lc.set(c.pal[0], c.pal[1], c.pal[2]);
+      } else { Lp.set(0,-1e6,0,0); Lc.set(0,0,0); }
+    }
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   9. FISH SCHOOLS (phase 1) & THE LEVIATHAN
+   ════════════════════════════════════════════════════════════════════ */
+
+/** Sunlit-zone fish: backlit silhouettes orbiting in two loose schools. */
+class FishSchools {
+  constructor(count = 150){
+    // slim fusiform body
+    const geo = new THREE.ConeGeometry(0.045, 0.42, 5, 1);
+    geo.rotateX(Math.PI/2); // point along +z
+    const aF = new Float32Array(count*4);
+    for(let i=0;i<count;i++){
+      aF[i*4+0] = Math.random()*Math.PI*2;       // orbit angle offset
+      aF[i*4+1] = 6 + Math.random()*15;          // orbit radius
+      aF[i*4+2] = Math.random()*Math.PI*2;       // wiggle phase
+      aF[i*4+3] = i < count/2 ? 0 : 1;           // school id
+    }
+    geo.setAttribute('aF', new THREE.InstancedBufferAttribute(aF,4));
+    this.uniforms = withShared({
+      uSchool: { value: [new THREE.Vector3(6,-26,-10), new THREE.Vector3(-14,-88,8)] }
+    });
+    const mat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3, uniforms: this.uniforms,
+      vertexShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL}
+        uniform vec3 uSchool[2];
+        in vec4 aF;
+        out vec3 vN; out vec3 vWp;
+        void main(){
+          vec3 c = uSchool[int(aF.w)];
+          float w = 0.16 + 0.04*aF.w;
+          float ang = aF.x + uTime*w;
+          float r = aF.y * (0.9 + 0.1*sin(uTime*0.5+aF.z));
+          vec3 center = c + vec3(cos(ang)*r, sin(uTime*0.7+aF.z)*1.8 + sin(ang*3.0)*0.7, sin(ang)*r);
+          // body frame: heading along the orbit tangent
+          vec3 fwd = normalize(vec3(-sin(ang), 0.12*cos(uTime*0.7+aF.z), cos(ang)));
+          vec3 up = vec3(0,1,0);
+          vec3 right = normalize(cross(up, fwd));
+          up = cross(fwd, right);
+          vec3 p = position;
+          p.x += sin(uTime*9.0 + aF.z + position.z*9.0) * 0.045 * (0.3+position.z); // tail beat
+          vec3 wp = center + right*p.x + up*p.y + fwd*p.z;
+          vWp = wp;
+          vN = normalize(right*normal.x + up*normal.y + fwd*normal.z);
+          gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
+        }`,
+      fragmentShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL}
+        uniform vec3 uCamPos;
+        in vec3 vN; in vec3 vWp;
+        out vec4 outColor;
+        void main(){
+          float dist = distance(uCamPos, vWp);
+          // backlit from the surface: dark belly, faint dorsal sheen
+          vec3 col = vec3(0.004,0.006,0.008);
+          float toplight = clamp(dot(normalize(vN), uSunDirW), 0.0, 1.0);
+          col += waterAmbient(uSunDirW) * toplight * 0.22;
+          col = fogged(col, normalize(vWp-uCamPos), dist);
+          outColor = vec4(col, 1.0);
+        }`
+    });
+    this.obj = new THREE.InstancedMesh(geo, mat, count);
+    // identity matrices; all motion is in the VS
+    const m = new THREE.Matrix4();
+    for(let i=0;i<count;i++) this.obj.setMatrixAt(i,m);
+    this.obj.frustumCulled = false;
+  }
+  update(depth){ this.obj.visible = depth < 250; }
+}
+
+/* Shared body-undulation so the hull and its photophores deform alike. */
+const LEVIATHAN_DEFORM = /* glsl */`
+vec3 leviathanDeform(vec3 p, float t){
+  float u = clamp(p.x*0.5 + 0.5, 0.0, 1.0);   // 0 nose → 1 tail
+  // fusiform profile + flattened fluke
+  float prof = pow(sin(u*3.14159), 0.75);
+  p.y *= prof * (1.0 - 0.3*u);
+  p.z *= prof * (1.0 - smoothstep(0.72, 1.0, u)*0.85);
+  p.y *= 1.0 + smoothstep(0.78, 1.0, u)*2.6;   // tall fluke silhouette at the tail
+  // swim stroke: lateral wave growing toward the tail
+  p.z += sin(u*4.2 - t*1.35) * 0.16 * u;
+  p.y += sin(u*2.0 - t*1.35) * 0.05 * u;
+  return p;
+}`;
+
+/**
+ * The large silhouette. A near-black mass that occludes snow and plankton,
+ * carrying a sparse line of faint photophores. Mostly seen, barely.
+ */
+class Leviathan {
+  constructor(){
+    this.group = new THREE.Group();
+    const geo = new THREE.SphereGeometry(1, 30, 18);
+    geo.scale(1, 0.46, 0.34); // stretched along x by instance scale
+    const bodyMat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3, uniforms: withShared({}),
+      vertexShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL} ${LEVIATHAN_DEFORM}
+        out vec3 vN; out vec3 vWp;
+        void main(){
+          vec3 p = leviathanDeform(position, uTime);
+          vec4 wp4 = modelMatrix * vec4(p, 1.0);
+          vWp = wp4.xyz;
+          vN = normalize(mat3(modelMatrix) * normal);
+          gl_Position = projectionMatrix * viewMatrix * wp4;
+        }`,
+      fragmentShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL}
+        uniform vec3 uCamPos;
+        in vec3 vN; in vec3 vWp;
+        out vec4 outColor;
+        void main(){
+          float dist = distance(uCamPos, vWp);
+          vec3 col = vec3(0.0015,0.002,0.0025);   // almost pure absence
+          float topl = clamp(dot(normalize(vN), uSunDirW),0.0,1.0);
+          col += waterAmbient(uSunDirW) * topl * 0.05;
+          col = fogged(col, normalize(vWp-uCamPos), dist);
+          outColor = vec4(col, 1.0);
+        }`
+    });
+    this.body = new THREE.Mesh(geo, bodyMat);
+    this.group.add(this.body);
+
+    // photophores: a sparse lateral line + a few on the head
+    const NP = 46;
+    const ppos = new Float32Array(NP*3), pseed = new Float32Array(NP*2);
+    for(let i=0;i<NP;i++){
+      const u = i/(NP-1);
+      const x = u*2-1;
+      const side = i%2 ? 1 : -1;
+      // raw local coords — the shared VS deform applies the body profile,
+      // so park them just OUTSIDE the hull (|z|=0.40 > body 0.34) or the
+      // opaque body depth-occludes them
+      ppos[i*3+0]=x;
+      ppos[i*3+1]=-0.06 + Math.random()*0.06;
+      ppos[i*3+2]=side*0.40;
+      pseed[i*2+0]=Math.random(); pseed[i*2+1]=Math.random();
+    }
+    const pg = new THREE.BufferGeometry();
+    pg.setAttribute('position', new THREE.BufferAttribute(ppos,3));
+    pg.setAttribute('aSeed', new THREE.BufferAttribute(pseed,2));
+    this.photoUniforms = withShared({ uPhoto: { value: 1 } });
+    const pmat = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3, uniforms: this.photoUniforms,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      vertexShader: /* glsl */`
+        ${NOISE_GLSL} ${WATER_GLSL} ${LEVIATHAN_DEFORM}
+        uniform vec3 uCamPos; uniform float uProjScale; uniform float uPhoto;
+        in vec2 aSeed;
+        out vec3 vCol; out float vFade;
+        void main(){
+          vec3 p = leviathanDeform(position, uTime);
+          vec4 wp4 = modelMatrix * vec4(p, 1.0);
+          float dc = distance(wp4.xyz, uCamPos);
+          float fl = 0.5 + 0.5*sin(uTime*(0.6+aSeed.x*1.2) + aSeed.y*40.0);
+          vCol = vec3(0.50,0.82,0.92) * (0.35+0.65*fl) * 3.4 * uPhoto * fogTransmit(dc);
+          vFade = 1.0;
+          vec4 mv = viewMatrix * wp4;
+          gl_Position = projectionMatrix * mv;
+          float px = uProjScale * 0.50 / max(-mv.z, 1.0);
+          gl_PointSize = clamp(px, 1.0, 26.0);
+        }`,
+      fragmentShader: POINT_FS
+    });
+    this.photo = new THREE.Points(pg, pmat);
+    this.photo.frustumCulled = false;
+    // photophores live in the body's local space → parent them
+    this.body.add(this.photo);
+    this.group.visible = false;
+    this.t0 = 0; this.dur = 0; this.from = new THREE.Vector3(); this.to = new THREE.Vector3();
+    this.scale = 24;
+  }
+  /** Send the silhouette along a straight glide from→to over dur seconds. */
+  swim(from, to, dur, scale, t, photo=1){
+    this.from.copy(from); this.to.copy(to);
+    this.t0 = t; this.dur = dur; this.scale = scale;
+    this.photoUniforms.uPhoto.value = photo;
+    this.group.visible = true;
+  }
+  update(t){
+    if(!this.group.visible) return;
+    const k = (t - this.t0) / this.dur;
+    if(k > 1){ this.group.visible = false; return; }
+    const p = this.from.clone().lerp(this.to, k);
+    this.body.position.copy(p);
+    const dir = this.to.clone().sub(this.from).normalize();
+    // nose along -x of the deformed body: orient +x backwards
+    const yaw = Math.atan2(dir.z, dir.x) + Math.PI;
+    this.body.rotation.set(0, -yaw, Math.asin(THREE.MathUtils.clamp(dir.y,-1,1))*0.6);
+    this.body.scale.setScalar(this.scale);
+  }
+  get active(){ return this.group.visible; }
+  /** Current world position (valid while active). */
+  pos(){ return this.body.position; }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   10. POST-PROCESSING — bloom, god rays, grade  (hand-rolled, no addons)
+   ════════════════════════════════════════════════════════════════════ */
+const FSQ_VS = /* glsl */`
+  out vec2 vUv;
+  void main(){ vUv = position.xy*0.5+0.5; gl_Position = vec4(position.xy, 0.0, 1.0); }`;
+
+class FSQuad {
+  constructor(){
+    this.scene = new THREE.Scene();
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1,-1,0, 3,-1,0, -1,3,0]),3));
+    this.mesh = new THREE.Mesh(g, null);
+    this.mesh.frustumCulled = false;
+    this.scene.add(this.mesh);
+    this.cam = new THREE.Camera();
+  }
+  draw(mat, target){
+    this.mesh.material = mat;
+    renderer.setRenderTarget(target);
+    renderer.render(this.scene, this.cam);
+  }
+}
+
+class PostFX {
+  constructor(w, h){
+    this.quad = new FSQuad();
+    const rt = (sw, sh, depth=false) => new THREE.WebGLRenderTarget(sw, sh, {
+      type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+      depthBuffer: depth, stencilBuffer: false
+    });
+    this.rtScene = rt(w, h, true);
+    this.MIPS = 5;
+    this.down = []; this.up = [];
+    let bw = w, bh = h;
+    for(let i=0;i<this.MIPS;i++){
+      bw = Math.max(1, bw>>1); bh = Math.max(1, bh>>1);
+      this.down.push(rt(bw,bh)); this.up.push(rt(bw,bh));
+    }
+    this.rtRays = rt(Math.max(1,w>>2), Math.max(1,h>>2));
+
+    this.matDown = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      uniforms: { tSrc:{value:null}, uTexel:{value:new THREE.Vector2()}, uPrefilter:{value:0} },
+      vertexShader: FSQ_VS,
+      fragmentShader: /* glsl */`
+        uniform sampler2D tSrc; uniform vec2 uTexel; uniform float uPrefilter;
+        in vec2 vUv; out vec4 outColor;
+        void main(){
+          vec3 c = texture(tSrc, vUv).rgb * 4.0;
+          c += texture(tSrc, vUv + uTexel*vec2(-1.0,-1.0)).rgb;
+          c += texture(tSrc, vUv + uTexel*vec2( 1.0,-1.0)).rgb;
+          c += texture(tSrc, vUv + uTexel*vec2(-1.0, 1.0)).rgb;
+          c += texture(tSrc, vUv + uTexel*vec2( 1.0, 1.0)).rgb;
+          c *= 0.125;
+          if(uPrefilter > 0.5){
+            float l = dot(c, vec3(0.2126,0.7152,0.0722));
+            float knee = smoothstep(0.78, 1.45, l);
+            c *= knee;
+          }
+          outColor = vec4(c, 1.0);
+        }`
+    });
+    this.matUp = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3,
+      uniforms: { tSrc:{value:null}, tAdd:{value:null}, uTexel:{value:new THREE.Vector2()} },
+      vertexShader: FSQ_VS,
+      fragmentShader: /* glsl */`
+        uniform sampler2D tSrc; uniform sampler2D tAdd; uniform vec2 uTexel;
+        in vec2 vUv; out vec4 outColor;
+        void main(){
+          vec3 c = vec3(0.0);
+          c += texture(tSrc, vUv + uTexel*vec2(-1.0, 0.0)).rgb * 2.0;
+          c += texture(tSrc, vUv + uTexel*vec2( 1.0, 0.0)).rgb * 2.0;
+          c += texture(tSrc, vUv + uTexel*vec2( 0.0,-1.0)).rgb * 2.0;
+          c += texture(tSrc, vUv + uTexel*vec2( 0.0, 1.0)).rgb * 2.0;
+          c += texture(tSrc, vUv + uTexel*vec2(-1.0,-1.0)).rgb;
+          c += texture(tSrc, vUv + uTexel*vec2( 1.0,-1.0)).rgb;
+          c += texture(tSrc, vUv + uTexel*vec2(-1.0, 1.0)).rgb;
+          c += texture(tSrc, vUv + uTexel*vec2( 1.0, 1.0)).rgb;
+          c /= 12.0;
+          outColor = vec4(c + texture(tAdd, vUv).rgb, 1.0);
+        }`
+    });
+    this.raysUniforms = {
+      uSunUV:{value:new THREE.Vector2(0.5,1.2)}, uRayI:{value:0},
+      uAspect:{value:w/h}, uTime: shared.uTime
+    };
+    this.matRays = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3, uniforms: this.raysUniforms,
+      vertexShader: FSQ_VS,
+      fragmentShader: /* glsl */`
+        ${NOISE_GLSL}
+        uniform vec2 uSunUV; uniform float uRayI; uniform float uAspect; uniform float uTime;
+        in vec2 vUv; out vec4 outColor;
+        void main(){
+          vec2 rel = vec2((vUv.x-uSunUV.x)*uAspect, vUv.y-uSunUV.y);
+          float rad = length(rel) + 1e-4;
+          float ang = atan(rel.y, rel.x);
+          // crepuscular shafts: layered angular noise, drifting slowly
+          float n  = vnoise3(vec3(ang*3.1,  uTime*0.05, 2.0));
+          n += 0.5*vnoise3(vec3(ang*8.0, -uTime*0.045, 5.0));
+          n /= 1.5;
+          float shaft = pow(smoothstep(0.30, 0.78, n), 1.6);
+          // radial streaming + falloff
+          float stream = 0.7 + 0.3*vnoise3(vec3(ang*2.0, rad*2.6 - uTime*0.35, 9.0));
+          float fall = exp(-rad*1.15);
+          float i = shaft * stream * fall * uRayI;
+          outColor = vec4(vec3(0.36,0.74,0.82) * i, 1.0);
+        }`
+    });
+    this.compUniforms = {
+      tScene:{value:this.rtScene.texture}, tBloom:{value:this.up[0].texture},
+      tRays:{value:this.rtRays.texture},
+      uExposure:{value:1.0}, uTime: shared.uTime, uVigour:{value:1.0},
+      uRes:{value:new THREE.Vector2(w,h)}
+    };
+    this.matComp = new THREE.ShaderMaterial({
+      glslVersion: THREE.GLSL3, uniforms: this.compUniforms,
+      vertexShader: FSQ_VS,
+      fragmentShader: /* glsl */`
+        uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tRays;
+        uniform float uExposure; uniform float uTime; uniform float uVigour;
+        uniform vec2 uRes;
+        in vec2 vUv; out vec4 outColor;
+        vec3 aces(vec3 x){
+          return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0);
+        }
+        void main(){
+          vec2 c = vUv - 0.5;
+          float r2 = dot(c,c);
+          // subtle chromatic aberration, growing toward the edges
+          vec2 off = c * r2 * 0.013;
+          vec3 col;
+          col.r = texture(tScene, vUv + off).r + texture(tBloom, vUv + off).r * 0.85;
+          col.g = texture(tScene, vUv).g       + texture(tBloom, vUv).g * 0.85;
+          col.b = texture(tScene, vUv - off).b + texture(tBloom, vUv - off).b * 0.85;
+          col += texture(tRays, vUv).rgb;
+          col *= uExposure;
+          col = aces(col);
+          // vignette
+          col *= 1.0 - 0.46*smoothstep(0.18, 0.62, r2);
+          // film grain, heavier in the dark (interleaved gradient noise — no moiré)
+          vec2 px = gl_FragCoord.xy + vec2(mod(uTime*97.0, 913.0), mod(uTime*71.0, 677.0));
+          float g = fract(52.9829189 * fract(0.06711056*px.x + 0.00583715*px.y));
+          float luma = dot(col, vec3(0.299,0.587,0.114));
+          col += (g-0.5) * 0.055 * (1.0 - luma*0.8) * uVigour;
+          col = pow(max(col, 0.0), vec3(1.0/2.2));
+          outColor = vec4(col, 1.0);
+        }`
+    });
+    this._sunWorld = new THREE.Vector3();
+    this._camFwd = new THREE.Vector3();
+  }
+  setSize(w, h){
+    this.rtScene.setSize(w, h);
+    let bw=w, bh=h;
+    for(let i=0;i<this.MIPS;i++){
+      bw=Math.max(1,bw>>1); bh=Math.max(1,bh>>1);
+      this.down[i].setSize(bw,bh); this.up[i].setSize(bw,bh);
+    }
+    this.rtRays.setSize(Math.max(1,w>>2), Math.max(1,h>>2));
+    this.raysUniforms.uAspect.value = w/h;
+    this.compUniforms.uRes.value.set(w,h);
+  }
+  /** Full frame: scene RT is already rendered; run bloom → rays → grade. */
+  compose(camera, depth){
+    // ── bloom pyramid
+    let src = this.rtScene;
+    for(let i=0;i<this.MIPS;i++){
+      this.matDown.uniforms.tSrc.value = src.texture;
+      this.matDown.uniforms.uTexel.value.set(1/src.width, 1/src.height);
+      this.matDown.uniforms.uPrefilter.value = i===0 ? 1 : 0;
+      this.quad.draw(this.matDown, this.down[i]);
+      src = this.down[i];
+    }
+    let acc = this.down[this.MIPS-1];
+    for(let i=this.MIPS-2;i>=0;i--){
+      this.matUp.uniforms.tSrc.value = acc.texture;
+      this.matUp.uniforms.tAdd.value = this.down[i].texture;
+      this.matUp.uniforms.uTexel.value.set(1/acc.width, 1/acc.height);
+      this.quad.draw(this.matUp, this.up[i]);
+      acc = this.up[i];
+    }
+    this.compUniforms.tBloom.value = acc.texture;
+
+    // ── god rays (skip entirely once extinguished)
+    const sun = shared.uSunDirW.value;
+    camera.getWorldDirection(this._camFwd);
+    const facing = this._camFwd.dot(sun); // -1 looking down … +1 looking at sun
+    let rayI = 4.2 * Math.exp(-depth/110) * THREE.MathUtils.smoothstep(facing, -0.65, 0.15);
+    if(rayI > 0.004){
+      this._sunWorld.copy(sun).multiplyScalar(3000).add(camera.position);
+      const p = this._sunWorld.project(camera);
+      this.raysUniforms.uSunUV.value.set(p.x*0.5+0.5, p.y*0.5+0.5);
+      this.raysUniforms.uRayI.value = rayI;
+      this.quad.draw(this.matRays, this.rtRays);
+    } else if(this.raysUniforms.uRayI.value !== 0){
+      this.raysUniforms.uRayI.value = 0;
+      renderer.setRenderTarget(this.rtRays);
+      renderer.clear();
+    }
+
+    // ── final grade to screen
+    this.compUniforms.uExposure.value = 1.05 + 0.95*THREE.MathUtils.smoothstep(depth, 150, 900);
+    this.quad.draw(this.matComp, null);
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   11. AUDIO — procedural deep-sea soundscape (WebAudio)
+   ════════════════════════════════════════════════════════════════════ */
+class AbyssAudio {
+  constructor(){ this.ok = false; this.muted = false; }
+  /** Build the graph. Must be called from a user gesture. */
+  init(){
+    try{
+      const C = new (window.AudioContext || window.webkitAudioContext)();
+      this.ctx = C;
+      this.master = C.createGain(); this.master.gain.value = 0.0;
+      this.lp = C.createBiquadFilter(); this.lp.type='lowpass'; this.lp.frequency.value = 16000;
+      const comp = C.createDynamicsCompressor();
+      this.master.connect(this.lp).connect(comp).connect(C.destination);
+      this.master.gain.linearRampToValueAtTime(0.9, C.currentTime + 0.8);
+
+      // ── eternal rumble: looping brown noise through a deep lowpass
+      const len = C.sampleRate * 5;
+      const buf = C.createBuffer(1, len, C.sampleRate);
+      const d = buf.getChannelData(0);
+      let b = 0;
+      for(let i=0;i<len;i++){ b = (b + 0.02*(Math.random()*2-1)) / 1.02; d[i] = b*3.0; }
+      // seamless loop: crossfade tail into head
+      for(let i=0;i<2000;i++){ const k=i/2000; d[len-2000+i] = d[len-2000+i]*(1-k) + d[i]*k; }
+      const noise = C.createBufferSource(); noise.buffer = buf; noise.loop = true;
+      const rlp = C.createBiquadFilter(); rlp.type='lowpass'; rlp.frequency.value = 90; rlp.Q.value = 0.6;
+      this.rumbleGain = C.createGain(); this.rumbleGain.gain.value = 0.5;
+      noise.connect(rlp).connect(this.rumbleGain).connect(this.master);
+      noise.start();
+      const lfo = C.createOscillator(); lfo.frequency.value = 0.05;
+      const lfoG = C.createGain(); lfoG.gain.value = 0.12;
+      lfo.connect(lfoG).connect(this.rumbleGain.gain); lfo.start();
+
+      // ── sub-bass pressure tone
+      const sub = C.createOscillator(); sub.type='sine'; sub.frequency.value = 27;
+      this.subGain = C.createGain(); this.subGain.gain.value = 0.04;
+      sub.connect(this.subGain).connect(this.master); sub.start();
+
+      // ── shared "ocean hall" feedback delay for calls
+      this.hall = C.createDelay(2.0); this.hall.delayTime.value = 0.85;
+      const fb = C.createGain(); fb.gain.value = 0.42;
+      const fblp = C.createBiquadFilter(); fblp.type='lowpass'; fblp.frequency.value = 600;
+      this.hall.connect(fb).connect(fblp).connect(this.hall);
+      this.hallIn = C.createGain(); this.hallIn.gain.value = 1.0;
+      this.hallIn.connect(this.hall); this.hall.connect(this.master);
+      this.hallIn.connect(this.master);
+
+      this.ok = true;
+    }catch(e){ console.warn('audio init failed', e); this.ok = false; }
+  }
+  /** Distant whale-like call. dist≈0 close … 1 far. */
+  whale(dist = 0.7, f0 = 170, fall = 0.33, dur = 5){
+    if(!this.ok) return;
+    const C = this.ctx, t = C.currentTime + 0.05;
+    const g = C.createGain(); g.gain.value = 0;
+    const o1 = C.createOscillator(); o1.type='sine';
+    const o2 = C.createOscillator(); o2.type='sine';
+    o1.frequency.setValueAtTime(f0, t);
+    o1.frequency.exponentialRampToValueAtTime(Math.max(f0*fall, 18), t+dur*0.8);
+    o2.frequency.setValueAtTime(f0*2.01, t);
+    o2.frequency.exponentialRampToValueAtTime(Math.max(f0*fall*2.01, 30), t+dur*0.8);
+    const g2 = C.createGain(); g2.gain.value = 0.22;
+    const vib = C.createOscillator(); vib.frequency.value = 4.5;
+    const vibG = C.createGain(); vibG.gain.value = 3.5;
+    vib.connect(vibG).connect(o1.frequency);
+    const peak = 0.12 * (1.2 - dist);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(peak, 0.001), t+dur*0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    o1.connect(g); o2.connect(g2).connect(g);
+    g.connect(this.hallIn);
+    o1.start(t); o2.start(t); vib.start(t);
+    o1.stop(t+dur+0.1); o2.stop(t+dur+0.1); vib.stop(t+dur+0.1);
+  }
+  /** Hull stress creak. */
+  creak(){
+    if(!this.ok) return;
+    const C = this.ctx, t = C.currentTime + 0.02;
+    const dur = 0.25 + Math.random()*0.5;
+    const n = C.createBufferSource();
+    const len = (C.sampleRate*dur)|0;
+    const buf = C.createBuffer(1, len, C.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i] = (Math.random()*2-1) * (1-i/len);
+    n.buffer = buf;
+    const bp = C.createBiquadFilter(); bp.type='bandpass';
+    const f = 240 + Math.random()*650;
+    bp.frequency.setValueAtTime(f, t);
+    bp.frequency.exponentialRampToValueAtTime(f*0.55, t+dur);
+    bp.Q.value = 11 + Math.random()*9;
+    const g = C.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.05+Math.random()*0.05, t+0.03);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    n.connect(bp).connect(g).connect(this.master);
+    n.start(t); n.stop(t+dur+0.05);
+  }
+  /** Entry splash. */
+  splash(){
+    if(!this.ok) return;
+    const C = this.ctx, t = C.currentTime;
+    const dur = 1.5;
+    const n = C.createBufferSource();
+    const len = (C.sampleRate*dur)|0;
+    const buf = C.createBuffer(1, len, C.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<len;i++) d[i] = (Math.random()*2-1);
+    n.buffer = buf;
+    const lp = C.createBiquadFilter(); lp.type='lowpass';
+    lp.frequency.setValueAtTime(2400, t);
+    lp.frequency.exponentialRampToValueAtTime(140, t+dur);
+    const g = C.createGain();
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    n.connect(lp).connect(g).connect(this.master);
+    n.start(t); n.stop(t+dur);
+    for(let i=0;i<7;i++){
+      const o = C.createOscillator(); o.type='sine';
+      const tg = C.createGain();
+      const tt = t + 0.15 + Math.random()*0.9;
+      o.frequency.setValueAtTime(500+Math.random()*1100, tt);
+      o.frequency.exponentialRampToValueAtTime(900+Math.random()*1600, tt+0.05);
+      tg.gain.setValueAtTime(0.0001, tt);
+      tg.gain.exponentialRampToValueAtTime(0.03, tt+0.012);
+      tg.gain.exponentialRampToValueAtTime(0.0001, tt+0.06);
+      o.connect(tg).connect(this.master);
+      o.start(tt); o.stop(tt+0.1);
+    }
+  }
+  /** Update depth-dependent voicing (throttled to ~4 Hz). */
+  update(depth){
+    if(!this.ok) return;
+    const C = this.ctx;
+    if(this._lastVoice && C.currentTime - this._lastVoice < 0.25) return;
+    this._lastVoice = C.currentTime;
+    const k = Math.min(depth/1500, 1);
+    this.rumbleGain.gain.setTargetAtTime(0.45 + 0.5*k, C.currentTime, 0.5);
+    this.subGain.gain.setTargetAtTime(0.04 + 0.10*k, C.currentTime, 0.5);
+    this.lp.frequency.setTargetAtTime(16000*Math.exp(-depth/2200) + 700, C.currentTime, 0.8);
+  }
+  duck(on){
+    if(!this.ok) return;
+    const C = this.ctx, t = C.currentTime;
+    if(on){
+      this.rumbleGain.gain.cancelScheduledValues(t);
+      this.rumbleGain.gain.setTargetAtTime(0.06, t, 0.9);
+      this.subGain.gain.setTargetAtTime(0.015, t, 0.9);
+      this.lp.frequency.setTargetAtTime(300, t, 0.9);
+    } else {
+      this.lp.frequency.setTargetAtTime(2500, t, 2.0);
+    }
+  }
+  toggleMute(){
+    if(!this.ok) return this.muted = !this.muted;
+    this.muted = !this.muted;
+    this.master.gain.setTargetAtTime(this.muted ? 0 : 0.9, this.ctx.currentTime, 0.12);
+    return this.muted;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   12. HUD — depth / temperature / pressure telemetry
+   ════════════════════════════════════════════════════════════════════ */
+class HUD {
+  constructor(){
+    this.el = document.getElementById('hud');
+    // persistent spans — only text nodes change, so CSS animations survive
+    this.el.innerHTML =
+      '<span class="zone"></span>\n<span class="big"></span>\n' +
+      '<span class="stat"></span>\n<span class="dim stat"></span><span class="caret">▍</span>';
+    this.elZone = this.el.querySelector('.zone');
+    this.elBig  = this.el.querySelector('.big');
+    [this.elStat, this.elSub] = this.el.querySelectorAll('.stat');
+    this.last = 0;
+    this.alert = false;
+  }
+  zone(d){
+    if(d < 200) return 'EPIPELAGIC — SUNLIGHT ZONE';
+    if(d < 1000) return 'MESOPELAGIC — TWILIGHT ZONE';
+    if(d < 4000) return 'BATHYPELAGIC — MIDNIGHT ZONE';
+    return 'ABYSSOPELAGIC';
+  }
+  setAlert(on){
+    this.alert = on;
+    this.el.classList.toggle('alert', on);
+  }
+  show(){ this.el.classList.add('on'); document.getElementById('mute').classList.add('on'); }
+  update(t, depth, speed){
+    if(t - this.last < 0.12) return;
+    this.last = t;
+    const jitter = (f)=> (Math.sin(t*13.7*f)+Math.sin(t*7.3*f+2.0))*0.5;
+    const temp = 1.8 + 25.2*Math.exp(-depth/110) + 1.5*Math.exp(-depth/900) + jitter(1)*0.04;
+    const press = 1 + depth/10.06 + jitter(0.7)*0.08;
+    this.elZone.textContent = this.zone(depth);
+    this.elBig.textContent  = depth.toFixed(1).padStart(7,' ') + ' m';
+    this.elStat.textContent = 'TEMP ' + temp.toFixed(1).padStart(5,' ') + ' °C   PRESS ' + press.toFixed(1).padStart(6,' ') + ' atm';
+    this.elSub.textContent  = 'RATE ' + speed.toFixed(1).padStart(4,' ') + ' m/s   ' + (this.alert ? 'PROXIMITY CONTACT — STATION-KEEPING' : 'DESCENDING');
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   13. CAMERA RIG — auto-descent, inertial look, scroll throttle
+   ════════════════════════════════════════════════════════════════════ */
+class CameraRig {
+  constructor(cam){
+    this.cam = cam;
+    this.depth = 1.5;
+    this.yaw = 0; this.pitch = -0.12; this.roll = 0;
+    this.tYaw = 0; this.tPitch = -0.12;
+    this.vYaw = 0; this.vPitch = 0;
+    this.speedMul = 1; this.tSpeedMul = 1;
+    this.speed = 0;
+    this.shake = 0;            // 0..1 impulse, decays
+    this.brake = 0;            // event brake 0..1
+    this.running = false;
+    addEventListener('mousemove', (e)=>{
+      const nx = (e.clientX/innerWidth)*2-1, ny = (e.clientY/innerHeight)*2-1;
+      this.tYaw = -nx * 2.4;
+      this.tPitch = -ny * 1.05;
+    });
+    addEventListener('wheel', (e)=>{
+      this.tSpeedMul = THREE.MathUtils.clamp(
+        this.tSpeedMul * Math.exp(-e.deltaY*0.0009), 0.25, 4.5);
+    }, { passive:true });
+  }
+  update(dt, t){
+    // critically-damped-ish look spring → smooth inertia with a hint of drift
+    const k = 26, c = 9.5;
+    this.vYaw   += (this.tYaw - this.yaw)*k*dt;   this.vYaw   *= Math.exp(-c*dt);
+    this.vPitch += (this.tPitch - this.pitch)*k*dt; this.vPitch *= Math.exp(-c*dt);
+    this.yaw += this.vYaw*dt; this.pitch += this.vPitch*dt;
+    this.roll = THREE.MathUtils.clamp(-this.vYaw*0.05, -0.10, 0.10);
+
+    this.speedMul += (this.tSpeedMul - this.speedMul)*Math.min(1, dt*2.5);
+    const base = 2.2 + Math.min(this.depth/420, 1)*1.9;   // 2.2 → 4.1 m/s
+    const target = this.running ? base*this.speedMul*(1-this.brake*0.92) : 0;
+    this.speed += (target - this.speed)*Math.min(1, dt*1.4);
+    this.depth += this.speed*dt;
+
+    const p = this.cam.position;
+    p.set(Math.sin(t*0.061)*0.7, -this.depth, Math.cos(t*0.053)*0.7); // slow sway
+    if(this.shake > 0.001){
+      const s = this.shake*this.shake;
+      p.x += (NoiseJS.vnoise3(t*11, 3.1, 0)-0.5)*0.5*s;
+      p.y += (NoiseJS.vnoise3(t*12, 9.4, 2)-0.5)*0.4*s;
+      this.shake *= Math.exp(-dt*1.6);
+    }
+    this.cam.rotation.order = 'YXZ';
+    this.cam.rotation.set(this.pitch, this.yaw, this.roll +
+      (this.shake>0.001 ? (NoiseJS.vnoise3(t*9,5.5,7)-0.5)*0.12*this.shake : 0));
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   14. DIRECTOR — phases, scripted dread, ambient event scheduling
+   ════════════════════════════════════════════════════════════════════ */
+class Director {
+  /**
+   * @param {Leviathan} levi  @param {AbyssAudio} audio
+   * @param {CameraRig} rig   @param {HUD} hud
+   */
+  constructor(levi, audio, rig, hud){
+    this.levi = levi; this.audio = audio; this.rig = rig; this.hud = hud;
+    this.eventDone = false; this.eventStage = 0; this.eventT = 0;
+    this.nextWhale = 50 + Math.random()*40;
+    this.nextCreak = 0;
+    this.nextFarPass = 200 + Math.random()*120;
+    this.lifeDimTarget = 1;
+    this._v2 = new THREE.Vector3();
+  }
+  /** Direction the camera is looking, flattened-ish, for staging spawns. */
+  _staging(camera, out, dist, side, drop){
+    camera.getWorldDirection(out);
+    out.multiplyScalar(dist);
+    const right = this._v2.set(-out.z, 0, out.x).normalize();
+    out.add(right.multiplyScalar(side));
+    out.y += drop;
+    out.add(camera.position);
+    return out;
+  }
+  update(t, dt, camera){
+    const depth = this.rig.depth;
+
+    // ambient whale calls (phase 2+)
+    if(depth > 230 && t > this.nextWhale){
+      this.nextWhale = t + 45 + Math.random()*65;
+      this.audio.whale(0.45 + Math.random()*0.5, 120+Math.random()*90, 0.3, 4+Math.random()*3);
+    }
+    // hull creaks at depth
+    if(depth > 700 && t > this.nextCreak){
+      this.nextCreak = t + 16 + Math.random()*30;
+      this.audio.creak();
+    }
+    // rare distant pass — a darker mass at the edge of visibility
+    if(!this.levi.active && depth > 380 && t > this.nextFarPass && !this.eventStage){
+      this.nextFarPass = t + 110 + Math.random()*120;
+      const d = 60 + Math.random()*30;
+      const from = this._staging(camera, new THREE.Vector3(), d, -90, -10 - Math.random()*20);
+      const to   = this._staging(camera, new THREE.Vector3(), d,  90, -10);
+      this.levi.swim(from, to, 38, 20 + Math.random()*9, t, 0.8);
+      this.audio.whale(0.85, 90, 0.3, 6);
+    }
+
+    /* ── THE 1500 m EVENT ──────────────────────────────────────────
+       All life dims. The rumble sinks. Then it passes — close. */
+    if(!this.eventDone && depth > 1500) this.eventStage = this.eventStage || 1;
+    if(this.eventStage === 1){            // begin blackout
+      this.eventT = t;
+      this.eventStage = 2;
+      this.lifeDimTarget = 0.04;
+      this.audio.duck(true);
+      this.rig.brake = 1;
+      this.hud.setAlert(true);
+      this.audio.creak();
+    } else if(this.eventStage === 2){     // silence… then it comes
+      if(t - this.eventT > 4.5){
+        this.eventStage = 3;
+        const from = this._staging(camera, new THREE.Vector3(), 40, -40, -15);
+        const to   = this._staging(camera, new THREE.Vector3(),  8,  30,  4);
+        this.levi.swim(from, to, 24, 27, t, 2.2);
+        this.audio.whale(0.05, 46, 0.45, 8);   // very close, very low
+      }
+    } else if(this.eventStage === 3){     // passing — shake when nearest
+      const d = this.levi.active ? this.levi.pos().distanceTo(camera.position) : 1e3;
+      if(d < 26){ this.rig.shake = Math.max(this.rig.shake, 0.6*(1-d/26)); }
+      if(t - this.eventT > 13.5){
+        this.eventStage = 4;
+        this.lifeDimTarget = 1;
+        this.audio.duck(false);
+        this.rig.brake = 0;
+        this.hud.setAlert(false);
+        this.audio.creak();
+      }
+    } else if(this.eventStage === 4 && t - this.eventT > 26){
+      this.eventStage = 0; this.eventDone = true;
+      this.nextFarPass = t + 140;
+    }
+
+    // ease the global dimmer
+    const cur = shared.uLifeDim.value;
+    shared.uLifeDim.value = cur + (this.lifeDimTarget - cur)*Math.min(1, dt*(this.lifeDimTarget < cur ? 0.9 : 0.35));
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   15. ASSEMBLY & MAIN LOOP
+   ════════════════════════════════════════════════════════════════════ */
+const plankton = new PlanktonField();
+const snow     = new MarineSnow();
+const bubbles  = new BubbleBurst();
+const jellies  = new JellyfishSwarm();
+const fish     = new FishSchools();
+const canyon   = new Canyon();
+const corals   = new CoralField();
+const levi     = new Leviathan();
+scene.add(plankton.obj, snow.obj, bubbles.obj, jellies.group, fish.obj,
+          canyon.mesh, corals.obj, levi.group);
+
+const audio = new AbyssAudio();
+const hud   = new HUD();
+const rig   = new CameraRig(camera);
+const director = new Director(levi, audio, rig, hud);
+
+let post = null;
+let renderScale = 1.0;
+function backbuffer(){
+  const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR) * renderScale;
+  return [Math.max(2, Math.round(innerWidth*dpr)), Math.max(2, Math.round(innerHeight*dpr))];
+}
+function applySize(){
+  const [w, h] = backbuffer();
+  renderer.setPixelRatio(1); // we bake DPR into the explicit size
+  renderer.setSize(w, h, false);
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  shared.uProjScale.value = h*0.5/Math.tan(THREE.MathUtils.degToRad(camera.fov*0.5));
+  if(!post) post = new PostFX(w, h); else post.setSize(w, h);
+}
+applySize();
+addEventListener('resize', applySize);
+
+/* Adaptive resolution: drop render scale if the GPU can't hold 60. */
+let emaDt = 16, slowFrames = 0, fastFrames = 0;
+function adaptPerf(rawDt){
+  emaDt = emaDt*0.96 + rawDt*1000*0.04;
+  if(emaDt > 19 && renderScale > 0.6){ slowFrames++; fastFrames = 0; }
+  else if(emaDt < 14 && renderScale < 1.0){ fastFrames++; slowFrames = 0; }
+  else { slowFrames = 0; fastFrames = 0; }
+  if(slowFrames > 110){
+    renderScale = Math.max(0.6, renderScale - 0.15); slowFrames = 0;
+    applySize(); console.info('[unit7] render scale →', renderScale.toFixed(2));
+  } else if(fastFrames > 900){
+    renderScale = Math.min(1.0, renderScale + 0.15); fastFrames = 0;
+    applySize(); console.info('[unit7] render scale →', renderScale.toFixed(2));
+  }
+}
+
+/* Plankton pulse emitter: ripples spreading from the unit's wake. */
+let pulseIdx = 0, nextPulse = 0;
+function emitPulses(t){
+  if(shared.uDepth.value > 150 && t > nextPulse && rig.speed > 0.4){
+    nextPulse = t + 1.6 + Math.random()*1.8;
+    const p = shared.uPulses.value[pulseIdx];
+    pulseIdx = (pulseIdx+1)&3;
+    const fwd = camera.getWorldDirection(new THREE.Vector3());
+    p.set(camera.position.x + fwd.x*3, camera.position.y + fwd.y*3 - 2, camera.position.z + fwd.z*3, t);
+  }
+}
+
+/* ── boot sequence ─────────────────────────────────────────────────── */
+const hashDepth = (() => {
+  const m = location.hash.match(/d=(\d+)/);
+  return m ? Math.max(1.5, parseFloat(m[1])) : null;
+})();
+if(hashDepth) rig.depth = hashDepth;
+
+const boot = document.getElementById('boot');
+const diveBtn = document.getElementById('dive');
+let started = false;
+function dive(){
+  if(started) return; started = true;
+  audio.init();
+  audio.splash();
+  boot.classList.add('gone');
+  document.getElementById('flash').classList.add('go');
+  rig.running = true;
+  rig.shake = 0.9;
+  bubbles.fire(clockT);
+  hud.show();
+  setTimeout(()=> boot.remove(), 1800);
+}
+diveBtn.addEventListener('click', dive);
+boot.addEventListener('click', dive);
+
+document.getElementById('mute').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  const m = audio.toggleMute();
+  e.currentTarget.textContent = m ? 'SND ○' : 'SND ◉';
+});
+document.addEventListener('visibilitychange', ()=>{
+  if(!audio.ok) return;
+  if(document.hidden) audio.ctx.suspend(); else audio.ctx.resume();
+});
+
+/* Shader warm-up: compile every program before the dive begins. */
+function warmup(){
+  const vis = [];
+  scene.traverse(o => { if(o.visible === false){ vis.push(o); o.visible = true; } });
+  jellies.group.visible = true; canyon.mesh.visible = true; levi.group.visible = true;
+  renderer.compile(scene, camera);
+  vis.forEach(o => o.visible = false);
+  levi.group.visible = false;
+}
+warmup();
+
+/* ── main loop ─────────────────────────────────────────────────────── */
+let prev = performance.now()/1000, clockT = 0;
+function frame(){
+  requestAnimationFrame(frame);
+  const now = performance.now()/1000;
+  const rawDt = Math.min(now - prev, 0.1); prev = now;
+  const dt = Math.min(rawDt, 0.05);
+  clockT += dt;
+  const t = clockT;
+
+  rig.update(dt, t);
+  const depth = rig.depth;
+
+  // shared uniforms — one write, every material sees it
+  shared.uTime.value = t;
+  shared.uDepth.value = depth;
+  shared.uCamY.value = camera.position.y;
+  shared.uCamPos.value.copy(camera.position);
+  camera.updateMatrixWorld();
+  shared.uInvPV.value.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse).invert();
+
+  // ecosystem
+  emitPulses(t);
+  jellies.update(t, dt, camera.position);
+  fish.update(depth);
+  canyon.mesh.visible = depth > 820;
+  canyon.mesh.position.y = 0; // geometry is wrapped in the VS via uCamY
+  corals.obj.visible = canyon.mesh.visible;
+  if(canyon.mesh.visible) corals.update(camera.position.y, canyon, t);
+  levi.update(t);
+  director.update(t, dt, camera);
+  audio.update(depth);
+  hud.update(t, depth, rig.speed);
+
+  // render: scene → HDR target, then the post chain
+  renderer.setRenderTarget(post.rtScene);
+  renderer.clear(true, true, false);
+  renderer.render(scene, camera);
+  post.compose(camera, depth);
+
+  adaptPerf(rawDt);
+}
+window.__bootOK = true;
+frame();
+</script>
+</body>
+</html>

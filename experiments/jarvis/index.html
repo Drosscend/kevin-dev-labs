@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>J.A.R.V.I.S. MK II</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --ember: 255, 160, 60;
+    --ember-dim: 255, 150, 50;
+  }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #020202;
+    cursor: pointer;
+    font-family: 'Cascadia Mono', 'Consolas', 'Courier New', monospace;
+  }
+
+  canvas.webgl { display: block; }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,0.75) 100%);
+  }
+  .scanlines {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255, 160, 50, 0.015) 0px,
+      rgba(255, 160, 50, 0.015) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+    mix-blend-mode: screen;
+  }
+
+  /* ---------------- HUD ---------------- */
+  .hud {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    color: rgba(var(--ember), 0.75);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    opacity: 0;
+    transition: opacity 1.6s ease;
+    text-shadow: 0 0 10px rgba(var(--ember-dim), 0.35);
+  }
+  .hud.on { opacity: 1; }
+
+  .panel {
+    position: absolute;
+    padding: 10px 14px;
+    background: rgba(15, 8, 2, 0.30);
+    border: 1px solid rgba(var(--ember), 0.14);
+    min-width: 190px;
+  }
+  /* corner brackets */
+  .panel::before, .panel::after {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-color: rgba(var(--ember), 0.65);
+    border-style: solid;
+  }
+  .panel::before { top: -1px; left: -1px; border-width: 1px 0 0 1px; }
+  .panel::after { bottom: -1px; right: -1px; border-width: 0 1px 1px 0; }
+
+  .panel h2 {
+    font-size: 10px;
+    font-weight: normal;
+    letter-spacing: 0.35em;
+    color: rgba(var(--ember), 0.95);
+    margin-bottom: 7px;
+    text-transform: uppercase;
+  }
+  .panel .row {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    line-height: 1.75;
+    color: rgba(255, 200, 130, 0.62);
+  }
+  .panel .row b {
+    font-weight: normal;
+    color: rgba(255, 220, 170, 0.92);
+  }
+
+  #p-status { top: 26px; left: 26px; }
+  #p-clock  { top: 26px; right: 26px; text-align: right; }
+  #p-sys    { bottom: 26px; left: 26px; }
+  #p-audio  { bottom: 26px; right: 26px; }
+
+  #mode {
+    display: inline-block;
+    padding: 2px 8px;
+    border: 1px solid rgba(var(--ember), 0.5);
+    color: rgba(255, 225, 175, 0.95);
+    letter-spacing: 0.25em;
+    animation: modepulse 2.2s ease-in-out infinite;
+  }
+  @keyframes modepulse {
+    0%, 100% { background: rgba(var(--ember), 0.06); }
+    50% { background: rgba(var(--ember), 0.16); }
+  }
+  #clock-time {
+    font-size: 26px;
+    color: rgba(255, 225, 175, 0.95);
+    letter-spacing: 0.12em;
+    line-height: 1.1;
+  }
+  #clock-date {
+    color: rgba(255, 200, 130, 0.6);
+    text-transform: capitalize;
+  }
+  #wave {
+    display: block;
+    width: 190px;
+    height: 42px;
+    margin-top: 6px;
+  }
+
+  .hint {
+    position: fixed;
+    bottom: 34px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 180, 90, 0.32);
+    font-size: 11px;
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    pointer-events: none;
+    transition: opacity 1.2s ease;
+    text-shadow: 0 0 12px rgba(255, 150, 40, 0.4);
+    white-space: nowrap;
+  }
+  .hint.hidden { opacity: 0; }
+
+  /* ---------------- Boot ---------------- */
+  #boot {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 2, 2, 0.93);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 1.4s ease;
+    z-index: 10;
+  }
+  #boot.done { opacity: 0; pointer-events: none; }
+  #boot pre {
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.9;
+    color: rgba(255, 190, 110, 0.85);
+    text-shadow: 0 0 12px rgba(255, 150, 40, 0.45);
+    letter-spacing: 0.06em;
+    min-width: min(560px, 86vw);
+  }
+  #boot pre .ok { color: rgba(160, 255, 170, 0.85); }
+  #boot pre .warn { color: rgba(255, 120, 90, 0.9); }
+  #boot .cursor {
+    display: inline-block;
+    width: 8px;
+    height: 14px;
+    background: rgba(255, 190, 110, 0.85);
+    animation: blink 0.8s steps(1) infinite;
+    vertical-align: text-bottom;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .scanlines { display: none; }
+    #mode { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="overlay"></div>
+<div class="scanlines"></div>
+
+<div class="hud" id="hud">
+  <div class="panel" id="p-status">
+    <h2>J.A.R.V.I.S.</h2>
+    <div class="row"><span>MODE</span><b><span id="mode">DÉMARRAGE</span></b></div>
+    <div class="row"><span>SESSION</span><b id="uptime">00:00</b></div>
+    <div class="row"><span>PROTOCOLES</span><b>ACTIFS</b></div>
+  </div>
+  <div class="panel" id="p-clock">
+    <div id="clock-time">--:--</div>
+    <div id="clock-date">&nbsp;</div>
+    <div class="row"><span>RENDU</span><b><span id="fps">--</span> FPS</b></div>
+  </div>
+  <div class="panel" id="p-sys">
+    <h2>Systèmes</h2>
+    <div class="row"><span>ÉNERGIE</span><b id="battery">--</b></div>
+    <div class="row"><span>MÉMOIRE</span><b id="memory">--</b></div>
+    <div class="row"><span>CŒURS</span><b id="cores">--</b></div>
+    <div class="row"><span>RÉSEAU</span><b id="network">--</b></div>
+  </div>
+  <div class="panel" id="p-audio">
+    <h2>Flux audio</h2>
+    <div class="row"><span>CAPTEUR</span><b id="mic-state">INACTIF</b></div>
+    <div class="row"><span>NIVEAU</span><b id="mic-level">0 %</b></div>
+    <div class="row"><span>PIC</span><b id="mic-peak">0 %</b></div>
+    <canvas id="wave" width="380" height="84"></canvas>
+  </div>
+</div>
+
+<div class="hint hidden" id="hint"></div>
+
+<div id="boot"><pre id="bootText"></pre></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  // ==================================================================
+  // J.A.R.V.I.S. MK II - holographic sculpture + boot sequence,
+  // live HUD telemetry and microphone reactivity.
+  //
+  // The WebGL entity (shell, bands, slabs, core cage, rings, spirals,
+  // spokes, sparks, nucleus iris) renders with additive blending and
+  // fog-based depth fade. Amplitude comes from the Web Audio RMS of the
+  // microphone; idle breathing takes over while it is off.
+  // ==================================================================
+
+  const $ = id => document.getElementById(id);
+  const hint = $('hint');
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const rand = (a, b) => a + Math.random() * (b - a);
+
+  // ---------------- Renderer / scene ----------------
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(0x020202, 1);
+  renderer.domElement.className = 'webgl';
+  document.body.insertBefore(renderer.domElement, document.body.firstChild);
+
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x000000, 2.6, 5.2);
+
+  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 20);
+  camera.position.set(0, 0, 3.3);
+  camera.lookAt(0, 0, 0);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  const sculpture = new THREE.Group();
+  scene.add(sculpture);
+
+  // Registry of materials whose intensity flickers each frame
+  const flickers = [];
+  const EMBER = new THREE.Color(1.0, 0.55, 0.16);
+  const HOT = new THREE.Color(1.0, 0.88, 0.62);
+
+  function lineMat(base, seed, rate, tint) {
+    const mat = new THREE.LineBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    flickers.push({ mat, base, seed, rate, tint: tint || EMBER });
+    return mat;
+  }
+  function meshMat(base, seed, rate, tint) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    flickers.push({ mat, base, seed, rate, tint: tint || EMBER });
+    return mat;
+  }
+
+  // ---------------- Geometry helpers (local XY plane) ----------------
+  function arcStrip(r, a0, a1, steps) {
+    const pts = [];
+    for (let s = 0; s <= steps; s++) {
+      const a = a0 + (s / steps) * (a1 - a0);
+      pts.push(Math.cos(a) * r, Math.sin(a) * r, 0);
+    }
+    return pts;
+  }
+  function stripToSegments(pts) {
+    const seg = [];
+    for (let i = 0; i + 5 < pts.length; i += 3) {
+      seg.push(pts[i], pts[i + 1], pts[i + 2], pts[i + 3], pts[i + 4], pts[i + 5]);
+    }
+    return seg;
+  }
+  function segGeometry(arr) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+    return g;
+  }
+  function sectorGeometry(rIn, rOut, a0, a1, steps) {
+    const pos = [];
+    for (let s = 0; s < steps; s++) {
+      const aA = a0 + (s / steps) * (a1 - a0);
+      const aB = a0 + ((s + 1) / steps) * (a1 - a0);
+      const iA = [Math.cos(aA) * rIn, Math.sin(aA) * rIn, 0];
+      const iB = [Math.cos(aB) * rIn, Math.sin(aB) * rIn, 0];
+      const oA = [Math.cos(aA) * rOut, Math.sin(aA) * rOut, 0];
+      const oB = [Math.cos(aB) * rOut, Math.sin(aB) * rOut, 0];
+      pos.push(...iA, ...oA, ...oB, ...iA, ...oB, ...iB);
+    }
+    return segGeometry(pos);
+  }
+  function randomRotation(obj) {
+    obj.rotation.set(rand(0, Math.PI), rand(0, Math.PI), rand(0, Math.PI));
+  }
+
+  const drifters = []; // { obj, speed }
+
+  // 1) BANDS - wide connected circuit-plates
+  for (let i = 0; i < 11; i++) {
+    const group = new THREE.Group();
+    randomRotation(group);
+    const sub = new THREE.Group();
+    group.add(sub);
+    sculpture.add(group);
+    drifters.push({ obj: sub, speed: rand(-0.10, 0.10) });
+
+    const r0 = rand(0.55, 0.95);
+    const width = rand(0.06, 0.16);
+    const arcLen = rand(1.4, 3.8);
+    const layers = 3 + Math.floor(Math.random() * 4);
+    const seed = Math.random() * 1000;
+
+    const seg = [];
+    for (let l = 0; l < layers; l++) {
+      const r = r0 + (l / (layers - 1)) * width;
+      if (Math.random() < 0.4) {
+        const gapAt = rand(0.2, 0.7) * arcLen;
+        const gapLen = rand(0.05, 0.25) * arcLen;
+        seg.push(...stripToSegments(arcStrip(r, 0, gapAt, Math.max(6, (gapAt * 14) | 0))));
+        seg.push(...stripToSegments(arcStrip(r, gapAt + gapLen, arcLen, Math.max(6, ((arcLen - gapAt - gapLen) * 14) | 0))));
+      } else {
+        seg.push(...stripToSegments(arcStrip(r, 0, arcLen, Math.max(10, (arcLen * 14) | 0))));
+      }
+    }
+    for (let a = 0.08; a < arcLen - 0.05; a += rand(0.18, 0.42)) {
+      seg.push(
+        Math.cos(a) * r0, Math.sin(a) * r0, 0,
+        Math.cos(a) * (r0 + width), Math.sin(a) * (r0 + width), 0
+      );
+    }
+    sub.add(new THREE.LineSegments(segGeometry(seg), lineMat(rand(0.5, 0.8), seed, 1.6)));
+    sub.add(new THREE.Mesh(
+      sectorGeometry(r0, r0 + width, 0, arcLen, Math.max(10, (arcLen * 10) | 0)),
+      meshMat(rand(0.05, 0.10), seed, 1.6)
+    ));
+  }
+
+  // 2) SLABS - curved rectangles, merged into 8 flicker groups
+  for (let gI = 0; gI < 8; gI++) {
+    const group = new THREE.Group();
+    sculpture.add(group);
+    const seed = Math.random() * 1000;
+    const fillM = meshMat(rand(0.10, 0.20), seed, 2.0, Math.random() < 0.3 ? HOT : EMBER);
+    const edgeM = lineMat(rand(0.35, 0.6), seed, 2.0);
+
+    for (let i = 0; i < 11; i++) {
+      const holder = new THREE.Group();
+      randomRotation(holder);
+      group.add(holder);
+      const big = Math.random() < 0.3;
+      const r = Math.random() < 0.2 ? rand(0.2, 0.42) : rand(0.42, 1.02);
+      const arcLen = big ? rand(0.35, 1.0) : rand(0.10, 0.35);
+      const thick = big ? rand(0.035, 0.085) : rand(0.015, 0.045);
+      const a0 = rand(0, Math.PI * 2);
+      const steps = Math.max(4, (arcLen * 12) | 0);
+
+      holder.add(new THREE.Mesh(sectorGeometry(r - thick / 2, r + thick / 2, a0, a0 + arcLen, steps), fillM));
+      holder.add(new THREE.LineSegments(
+        segGeometry(stripToSegments(arcStrip(r + thick / 2, a0, a0 + arcLen, steps))),
+        edgeM
+      ));
+    }
+  }
+
+  // 3) CORE CAGE - concentric broken rings on 3 shared planes
+  {
+    const planes = [new THREE.Group(), new THREE.Group(), new THREE.Group()];
+    planes.forEach(p => { randomRotation(p); sculpture.add(p); });
+    for (let i = 0; i < 9; i++) {
+      const holder = new THREE.Group();
+      planes[i % 3].add(holder);
+      drifters.push({ obj: holder, speed: rand(-0.3, 0.3) });
+      const r = 0.26 + (i / 9) * 0.22;
+      const seg = [];
+      let a = rand(0, Math.PI * 2);
+      const n = 2 + Math.floor(Math.random() * 3);
+      for (let s = 0; s < n; s++) {
+        const len = rand(0.8, 2.2);
+        seg.push(...stripToSegments(arcStrip(r, a, a + len, Math.max(8, (len * 16) | 0))));
+        a += len + rand(0.2, 0.8);
+      }
+      holder.add(new THREE.LineSegments(segGeometry(seg), lineMat(rand(0.6, 0.95), Math.random() * 1000, 2.4)));
+    }
+  }
+
+  // 4) OUTER RINGS - broken arcs sweeping beyond the shell
+  for (let i = 0; i < 5; i++) {
+    const group = new THREE.Group();
+    randomRotation(group);
+    sculpture.add(group);
+    const holder = new THREE.Group();
+    group.add(holder);
+    drifters.push({ obj: holder, speed: rand(-0.12, 0.12) });
+    const r = rand(1.04, 1.18);
+    const seg = [];
+    let a = rand(0, Math.PI * 2);
+    const n = 2 + Math.floor(Math.random() * 3);
+    for (let s = 0; s < n; s++) {
+      const len = rand(0.8, 2.6);
+      seg.push(...stripToSegments(arcStrip(r, a, a + len, Math.max(10, (len * 16) | 0))));
+      a += len + rand(0.4, 1.4);
+    }
+    holder.add(new THREE.LineSegments(segGeometry(seg), lineMat(rand(0.4, 0.7), Math.random() * 1000, 1.7)));
+  }
+
+  // 5) SPIRALS - double-rail ribbons with rungs
+  for (let i = 0; i < 4; i++) {
+    const group = new THREE.Group();
+    randomRotation(group);
+    sculpture.add(group);
+    const holder = new THREE.Group();
+    group.add(holder);
+    drifters.push({ obj: holder, speed: rand(-0.08, 0.08) });
+
+    const turns = rand(1.4, 2.6);
+    const rIn = rand(0.15, 0.3), rOut = rand(0.85, 1.08);
+    const rail = rand(0.02, 0.045);
+    const total = turns * Math.PI * 2;
+    const steps = (total * 14) | 0;
+    const seg = [];
+
+    for (let railSide = -1; railSide <= 1; railSide += 2) {
+      const strip = [];
+      for (let s = 0; s <= steps; s++) {
+        const a = (s / steps) * total;
+        const r = rIn + (s / steps) * (rOut - rIn) + railSide * rail;
+        strip.push(Math.cos(a) * r, Math.sin(a) * r, 0);
+      }
+      seg.push(...stripToSegments(strip));
+    }
+    for (let a = 0; a < total; a += rand(0.22, 0.4)) {
+      const rBase = rIn + (a / total) * (rOut - rIn);
+      seg.push(
+        Math.cos(a) * (rBase - rail), Math.sin(a) * (rBase - rail), 0,
+        Math.cos(a) * (rBase + rail), Math.sin(a) * (rBase + rail), 0
+      );
+    }
+    holder.add(new THREE.LineSegments(segGeometry(seg), lineMat(rand(0.35, 0.6), Math.random() * 1000, 1.9)));
+  }
+
+  // 6) SPOKES - rays welded to arc caps, fading to black at the center
+  {
+    const pos = [], col = [];
+    for (let i = 0; i < 20; i++) {
+      const theta = rand(0, Math.PI * 2);
+      const phi = Math.acos(rand(-1, 1));
+      const d = new THREE.Vector3(
+        Math.sin(phi) * Math.cos(theta),
+        Math.cos(phi),
+        Math.sin(phi) * Math.sin(theta)
+      );
+      const inner = rand(0.10, 0.3), outer = rand(0.75, 1.05);
+      pos.push(d.x * inner, d.y * inner, d.z * inner, d.x * outer, d.y * outer, d.z * outer);
+      col.push(0.25, 0.12, 0.03, 1.0, 0.6, 0.2);
+    }
+    const g = segGeometry(pos);
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const mat = new THREE.LineBasicMaterial({
+      vertexColors: true, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    flickers.push({ mat, base: 0.35, seed: 42, rate: 1.4, tint: new THREE.Color(1, 1, 1) });
+    sculpture.add(new THREE.LineSegments(g, mat));
+  }
+
+  // 7) SHELL - clustered GPU points with limb brightening (shader)
+  const shellUniforms = {
+    uTime: { value: 0 },
+    uAmp: { value: 0 },
+    uEnergy: { value: 0 },
+    uPR: { value: renderer.getPixelRatio() }
+  };
+  {
+    const positions = [], seeds = [], brights = [], sizes = [];
+    const CLUSTERS = 42;
+    for (let c = 0; c < CLUSTERS; c++) {
+      const theta = rand(0, Math.PI * 2);
+      const phi = Math.acos(rand(-1, 1));
+      const cx = Math.sin(phi) * Math.cos(theta);
+      const cy = Math.cos(phi);
+      const cz = Math.sin(phi) * Math.sin(theta);
+      const spread = rand(0.12, 0.35);
+      const count = 40 + Math.floor(Math.random() * 45);
+      const clusterSeed = Math.random() * 100;
+      for (let i = 0; i < count; i++) {
+        let x = cx + (Math.random() + Math.random() - 1) * spread;
+        let y = cy + (Math.random() + Math.random() - 1) * spread;
+        let z = cz + (Math.random() + Math.random() - 1) * spread;
+        const l = Math.sqrt(x * x + y * y + z * z) || 1;
+        const r = rand(0.92, 1.05);
+        positions.push(x / l * r, y / l * r, z / l * r);
+        seeds.push(clusterSeed + Math.random() * 20);
+        brights.push(Math.random());
+        sizes.push(rand(1.6, 4.2));
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seeds, 1));
+    g.setAttribute('aBright', new THREE.Float32BufferAttribute(brights, 1));
+    g.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms: shellUniforms,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      vertexShader: `
+        attribute float aSeed;
+        attribute float aBright;
+        attribute float aSize;
+        uniform float uTime;
+        uniform float uAmp;
+        uniform float uPR;
+        varying float vBright;
+        varying float vFlick;
+        varying float vLimb;
+        varying float vDepth;
+        void main() {
+          vBright = aBright;
+          vec3 dir = normalize(position);
+          float disp = sin(uTime * 14.0 + aSeed * 7.0) * uAmp * 0.035;
+          vec3 p = position + dir * disp;
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          vec3 n = normalize((modelViewMatrix * vec4(dir, 0.0)).xyz);
+          vLimb = pow(1.0 - abs(n.z), 1.6);
+          vFlick = (0.4 + 0.6 * abs(sin(uTime * 2.8 + aSeed * 5.0)))
+                 * (0.55 + 0.45 * sin(uTime * 1.1 + aSeed));
+          vDepth = smoothstep(-5.2, -2.4, mv.z);
+          gl_PointSize = aSize * (0.8 + vLimb * 0.9 + uAmp * 0.5) * uPR * (3.4 / -mv.z);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: `
+        uniform float uEnergy;
+        varying float vBright;
+        varying float vFlick;
+        varying float vLimb;
+        varying float vDepth;
+        void main() {
+          vec2 uv = gl_PointCoord - 0.5;
+          float d = length(uv);
+          float mask = smoothstep(0.5, 0.05, d);
+          vec3 ember = vec3(0.95, 0.48, 0.10);
+          vec3 hot = vec3(1.0, 0.92, 0.70);
+          vec3 col = mix(ember, hot, step(0.86, vBright));
+          float k = (0.12 + vLimb * 0.8) * vFlick * (0.55 + uEnergy * 0.6)
+                  * (0.4 + vBright * 0.6) * vDepth;
+          gl_FragColor = vec4(col * mask * k, 1.0);
+        }
+      `
+    });
+    sculpture.add(new THREE.Points(g, mat));
+  }
+
+  // 8) SPARKS - loose points drifting around the sculpture
+  {
+    const positions = [], seeds = [], brights = [], sizes = [];
+    for (let i = 0; i < 220; i++) {
+      const theta = rand(0, Math.PI * 2);
+      const phi = Math.acos(rand(-1, 1));
+      const r = rand(0.25, 1.5);
+      positions.push(
+        Math.sin(phi) * Math.cos(theta) * r,
+        Math.cos(phi) * r,
+        Math.sin(phi) * Math.sin(theta) * r
+      );
+      seeds.push(Math.random() * 100);
+      brights.push(Math.random());
+      sizes.push(rand(1.2, 3.2));
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seeds, 1));
+    g.setAttribute('aBright', new THREE.Float32BufferAttribute(brights, 1));
+    g.setAttribute('aSize', new THREE.Float32BufferAttribute(sizes, 1));
+    const mat = new THREE.ShaderMaterial({
+      uniforms: shellUniforms,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      vertexShader: `
+        attribute float aSeed;
+        attribute float aBright;
+        attribute float aSize;
+        uniform float uTime;
+        uniform float uAmp;
+        uniform float uPR;
+        varying float vFlick;
+        varying float vBright;
+        varying float vDepth;
+        void main() {
+          vBright = aBright;
+          vec3 wob = vec3(
+            sin(uTime * 0.4 + aSeed),
+            cos(uTime * 0.5 + aSeed * 2.0),
+            sin(uTime * 0.6 + aSeed * 3.0)
+          ) * 0.05;
+          vec4 mv = modelViewMatrix * vec4(position + wob, 1.0);
+          vFlick = 0.3 + 0.7 * abs(sin(uTime * 2.6 + aSeed * 3.0));
+          vDepth = smoothstep(-5.2, -2.4, mv.z);
+          gl_PointSize = aSize * (1.0 + uAmp * 0.6) * uPR * (3.4 / -mv.z);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: `
+        uniform float uEnergy;
+        varying float vFlick;
+        varying float vBright;
+        varying float vDepth;
+        void main() {
+          vec2 uv = gl_PointCoord - 0.5;
+          float mask = smoothstep(0.5, 0.05, length(uv));
+          vec3 col = vec3(1.0, 0.78, 0.45);
+          float k = (0.10 + vBright * 0.35) * vFlick * (0.5 + uEnergy * 0.6) * vDepth;
+          gl_FragColor = vec4(col * mask * k, 1.0);
+        }
+      `
+    });
+    sculpture.add(new THREE.Points(g, mat));
+  }
+
+  // 9) CORE GLOW - layered sprites at the heart
+  function glowTexture(stops) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+    for (const [pos, color] of stops) grad.addColorStop(pos, color);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 256, 256);
+    return new THREE.CanvasTexture(c);
+  }
+  function makeSprite(tex, scale) {
+    const m = new THREE.SpriteMaterial({
+      map: tex, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    const s = new THREE.Sprite(m);
+    s.scale.set(scale, scale, 1);
+    return s;
+  }
+  const halo = makeSprite(glowTexture([
+    [0, 'rgba(255,150,50,0.35)'], [0.5, 'rgba(255,110,20,0.12)'], [1, 'rgba(0,0,0,0)']
+  ]), 4.2);
+  const coreGlow = makeSprite(glowTexture([
+    [0, 'rgba(255,245,215,0.95)'], [0.2, 'rgba(255,200,110,0.6)'],
+    [0.45, 'rgba(255,130,30,0.25)'], [1, 'rgba(0,0,0,0)']
+  ]), 1.15);
+  const corePin = makeSprite(glowTexture([
+    [0, 'rgba(255,255,248,1)'], [1, 'rgba(255,220,150,0)']
+  ]), 0.30);
+  scene.add(halo, coreGlow, corePin);
+
+  // 10) NUCLEUS - mechanical iris facing the camera
+  const nucleus = new THREE.Group();
+  scene.add(nucleus);
+  const nucleusSpin = [];
+
+  function circleLine(r, steps, mat) {
+    const strip = arcStrip(r, 0, Math.PI * 2, steps);
+    return new THREE.LineSegments(segGeometry(stripToSegments(strip)), mat);
+  }
+  {
+    nucleus.add(circleLine(0.055, 48, lineMat(1.0, 1, 0.4, HOT)));
+
+    const blades = new THREE.Group();
+    nucleus.add(blades);
+    nucleusSpin.push({ obj: blades, speed: 0.6 });
+    const bladeM = lineMat(0.85, 2, 0.6, new THREE.Color(1.0, 0.82, 0.5));
+    for (let i = 0; i < 5; i++) {
+      const a0 = (i / 5) * Math.PI * 2;
+      blades.add(new THREE.LineSegments(
+        segGeometry(stripToSegments(arcStrip(0.085, a0, a0 + (Math.PI * 2 / 5) * 0.62, 12))),
+        bladeM
+      ));
+    }
+
+    const ticks = new THREE.Group();
+    nucleus.add(ticks);
+    nucleusSpin.push({ obj: ticks, speed: -0.35 });
+    const seg = [];
+    for (let i = 0; i < 48; i++) {
+      const a = (i / 48) * Math.PI * 2;
+      const long = i % 6 === 0;
+      const r0 = 0.115, r1 = long ? 0.145 : 0.132;
+      seg.push(Math.cos(a) * r0, Math.sin(a) * r0, 0, Math.cos(a) * r1, Math.sin(a) * r1, 0);
+    }
+    ticks.add(new THREE.LineSegments(segGeometry(seg), lineMat(0.55, 3, 3.0)));
+
+    const beadPos = [];
+    for (let i = 0; i < 26; i++) {
+      const a = (i / 26) * Math.PI * 2;
+      beadPos.push(Math.cos(a) * 0.17, Math.sin(a) * 0.17, 0);
+    }
+    const beadG = new THREE.BufferGeometry();
+    beadG.setAttribute('position', new THREE.Float32BufferAttribute(beadPos, 3));
+    const beadM = new THREE.PointsMaterial({
+      color: 0xffd791, size: 0.012, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    const beads = new THREE.Points(beadG, beadM);
+    nucleus.add(beads);
+    nucleusSpin.push({ obj: beads, speed: 0.25 });
+
+    nucleus.add(circleLine(0.205, 64, lineMat(0.35, 4, 1.2)));
+    nucleus.add(circleLine(0.222, 64, lineMat(0.35, 5, 1.2)));
+    const highlights = new THREE.Group();
+    nucleus.add(highlights);
+    nucleusSpin.push({ obj: highlights, speed: -0.8 });
+    const hlM = lineMat(0.85, 6, 0.5, new THREE.Color(1.0, 0.9, 0.68));
+    for (let i = 0; i < 3; i++) {
+      const a0 = i * (Math.PI * 2 / 3);
+      highlights.add(new THREE.LineSegments(
+        segGeometry(stripToSegments(arcStrip(0.213, a0, a0 + 0.55, 10))),
+        hlM
+      ));
+    }
+
+    const rays = new THREE.Group();
+    nucleus.add(rays);
+    nucleusSpin.push({ obj: rays, speed: 0.12 });
+    const rayPos = [], rayCol = [];
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2 + Math.sin(i * 7.3) * 0.4;
+      const len = 0.32 + 0.18 * Math.sin(i * 2.9);
+      rayPos.push(Math.cos(a) * 0.23, Math.sin(a) * 0.23, 0, Math.cos(a) * len, Math.sin(a) * len, 0);
+      rayCol.push(1.0, 0.85, 0.55, 0.0, 0.0, 0.0);
+    }
+    const rayG = segGeometry(rayPos);
+    rayG.setAttribute('color', new THREE.Float32BufferAttribute(rayCol, 3));
+    const rayM = new THREE.LineBasicMaterial({
+      vertexColors: true, transparent: true,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    flickers.push({ mat: rayM, base: 0.7, seed: 7, rate: 1.8, tint: new THREE.Color(1, 1, 1) });
+    rays.add(new THREE.LineSegments(rayG, rayM));
+  }
+
+  // ---------------- State ----------------
+  let time = 0;
+  let amplitude = 0;
+  let targetAmplitude = 0;
+  let energy = 0;
+  let burst = 0;          // surge on activation, decays
+  let booted = false;
+  let micPeak = 0;        // decaying peak of the microphone level
+  let hudTimer = 0;
+
+  function setMode(m) {
+    $('mode').textContent = m;
+  }
+
+  function flashHint(text, ms) {
+    hint.textContent = text;
+    hint.classList.remove('hidden');
+    if (ms) setTimeout(() => hint.classList.add('hidden'), ms);
+  }
+
+  // ---------------- Ambient microphone reactivity ----------------
+  let audioCtx = null, analyser = null, micData = null, micActive = false, micStream = null;
+
+  function setMicState(label) {
+    $('mic-state').textContent = label;
+  }
+
+  async function toggleMic() {
+    if (micActive) {
+      micActive = false;
+      if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+      setMicState('INACTIF');
+      setMode('VEILLE');
+      flashHint('Micro coupé · cliquez pour le rallumer', 2500);
+      return;
+    }
+    if (!window.isSecureContext) {
+      setMicState('NON SÉCURISÉ');
+      flashHint('Micro indisponible en file:// : servez la page en http (localhost)', 4500);
+      return;
+    }
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
+      const src = audioCtx.createMediaStreamSource(micStream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.6;
+      src.connect(analyser);
+      micData = new Uint8Array(analyser.frequencyBinCount);
+      micActive = true;
+      burst = 1;
+      setMicState('ACTIF');
+      setMode('ÉCOUTE');
+      flashHint('Parlez : la sculpture suit votre voix', 3000);
+    } catch (e) {
+      setMicState('REFUSÉ');
+      flashHint('Accès au micro refusé', 2500);
+    }
+  }
+
+  function micLevel() {
+    if (!micActive || !analyser) return 0;
+    analyser.getByteTimeDomainData(micData);
+    let sum = 0;
+    for (let i = 0; i < micData.length; i++) {
+      const v = (micData[i] - 128) / 128;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / micData.length);
+    return Math.min(1, Math.max(0, (rms - 0.015) * 7));
+  }
+
+  // ---------------- HUD telemetry ----------------
+  const hud = $('hud');
+  const waveCanvas = $('wave');
+  const waveCtx = waveCanvas.getContext('2d');
+  const waveHistory = new Array(120).fill(0);
+  const startTime = Date.now();
+  let frames = 0, fpsTimer = 0;
+
+  $('cores').textContent = navigator.hardwareConcurrency ? `${navigator.hardwareConcurrency} × CPU` : 'N/D';
+
+  function updateNetwork() {
+    $('network').textContent = navigator.onLine ? 'EN LIGNE' : 'HORS LIGNE';
+  }
+  window.addEventListener('online', updateNetwork);
+  window.addEventListener('offline', updateNetwork);
+  updateNetwork();
+
+  let batteryLevel = null;
+  if (navigator.getBattery) {
+    navigator.getBattery().then(b => {
+      const show = () => {
+        batteryLevel = Math.round(b.level * 100);
+        $('battery').textContent = `${batteryLevel}%${b.charging ? ' ⚡' : ''}`;
+      };
+      show();
+      b.addEventListener('levelchange', show);
+      b.addEventListener('chargingchange', show);
+    }).catch(() => { $('battery').textContent = 'N/D'; });
+  } else {
+    $('battery').textContent = 'SECTEUR';
+  }
+
+  setInterval(() => {
+    const now = new Date();
+    $('clock-time').textContent = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    $('clock-date').textContent = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+
+    const up = Math.floor((Date.now() - startTime) / 1000);
+    $('uptime').textContent = `${String(Math.floor(up / 60)).padStart(2, '0')}:${String(up % 60).padStart(2, '0')}`;
+
+    if (performance.memory) {
+      $('memory').textContent = `${Math.round(performance.memory.usedJSHeapSize / 1048576)} Mo`;
+    } else {
+      $('memory').textContent = 'N/D';
+    }
+  }, 1000);
+
+  function drawWave() {
+    const w = waveCanvas.width, h = waveCanvas.height;
+    waveHistory.push(Math.max(amplitude, micLevelCache));
+    waveHistory.shift();
+    waveCtx.clearRect(0, 0, w, h);
+    waveCtx.beginPath();
+    for (let i = 0; i < waveHistory.length; i++) {
+      const x = (i / (waveHistory.length - 1)) * w;
+      const y = h / 2 + Math.sin(i * 0.9 + time * 6) * waveHistory[i] * (h * 0.42);
+      if (i === 0) waveCtx.moveTo(x, y); else waveCtx.lineTo(x, y);
+    }
+    waveCtx.strokeStyle = 'rgba(255, 175, 80, 0.85)';
+    waveCtx.lineWidth = 2;
+    waveCtx.stroke();
+    waveCtx.beginPath();
+    waveCtx.moveTo(0, h / 2);
+    waveCtx.lineTo(w, h / 2);
+    waveCtx.strokeStyle = 'rgba(255, 160, 60, 0.15)';
+    waveCtx.lineWidth = 1;
+    waveCtx.stroke();
+  }
+
+  // ---------------- Animation loop ----------------
+  const clock = new THREE.Clock();
+  let micLevelCache = 0;
+
+  function loop() {
+    requestAnimationFrame(loop);
+    const dt = Math.min(clock.getDelta(), 0.05);
+    time += dt;
+
+    frames++;
+    fpsTimer += dt;
+    if (fpsTimer >= 0.5) {
+      $('fps').textContent = Math.round(frames / fpsTimer);
+      frames = 0;
+      fpsTimer = 0;
+    }
+
+    micLevelCache = micLevel();
+    amplitude += (targetAmplitude - amplitude) * Math.min(1, dt * 12);
+    burst = Math.max(0, burst - dt * 0.6);
+    const targetEnergy = Math.min(1, micLevelCache * 1.6 + burst);
+    energy += (targetEnergy - energy) * Math.min(1, dt * 2.5);
+
+    // Without a microphone the sculpture still breathes, so the page never
+    // looks frozen before the visitor grants access.
+    targetAmplitude = micActive ? micLevelCache : 0.07 + Math.sin(time * 0.9) * 0.035;
+
+    micPeak = Math.max(micPeak - dt * 0.35, micLevelCache);
+    hudTimer += dt;
+    if (hudTimer >= 0.12) {
+      hudTimer = 0;
+      $('mic-level').textContent = `${Math.round(micLevelCache * 100)} %`;
+      $('mic-peak').textContent = `${Math.round(micPeak * 100)} %`;
+    }
+
+    const speed = reducedMotion ? 0.015 : (0.055 + energy * 0.13 + burst * 0.35);
+    sculpture.rotation.y += dt * speed;
+    sculpture.rotation.x = -0.15 + Math.sin(time * 0.1) * 0.08;
+    const breathe = 1 + Math.sin(time * 0.8) * 0.008 + amplitude * 0.03;
+    sculpture.scale.setScalar(breathe);
+
+    for (const d of drifters) d.obj.rotation.z += dt * d.speed;
+
+    const boost = 0.7 + energy * 0.6;
+    for (const f of flickers) {
+      const flick = 0.6 + 0.4 * Math.sin(time * f.rate + f.seed);
+      const k = f.base * flick * boost;
+      f.mat.color.setRGB(f.tint.r * k, f.tint.g * k, f.tint.b * k);
+    }
+
+    shellUniforms.uTime.value = time;
+    shellUniforms.uAmp.value = amplitude;
+    shellUniforms.uEnergy.value = energy;
+
+    const nScale = 1 + amplitude * 0.12;
+    nucleus.scale.set(nScale, nScale * (0.92 + Math.sin(time * 0.35) * 0.05), nScale);
+    nucleus.rotation.z = Math.sin(time * 0.22) * 0.25;
+    for (const s of nucleusSpin) s.obj.rotation.z += dt * s.speed;
+
+    const corePulse = 1 + amplitude * 0.35 + Math.sin(time * 2.3) * 0.03;
+    coreGlow.scale.set(1.15 * corePulse, 1.15 * corePulse, 1);
+    corePin.scale.set(0.30 * corePulse, 0.30 * corePulse, 1);
+    halo.material.opacity = 0.55 + energy * 0.45;
+
+    drawWave();
+    renderer.render(scene, camera);
+  }
+  loop();
+
+  // ---------------- Boot sequence ----------------
+  const bootText = $('bootText');
+  const cursorSpan = document.createElement('span');
+  cursorSpan.className = 'cursor';
+
+  const BOOT_LINES = [
+    ['J.A.R.V.I.S.  v5.2.0  //  STARK INDUSTRIES', ''],
+    ['', ''],
+    ['> Amorçage du noyau holographique .......... ', 'OK'],
+    ['> Calibration de la matrice photonique ..... ', 'OK'],
+    ['> Chargement des 2600 émetteurs plasma ..... ', 'OK'],
+    ['> Capteur acoustique ambiant ............... ', navigator.mediaDevices ? 'EN ATTENTE' : 'ABSENT'],
+    ['> Analyse spectrale temps réel ............. ', 'OK'],
+    ['> Liaison satellite ........................ ', navigator.onLine ? 'OK' : 'HORS LIGNE'],
+    ['> Protocoles de sécurité ................... ', 'ACTIFS'],
+    ['', ''],
+    ['Tous les systèmes sont opérationnels.', '']
+  ];
+
+  let bootSkipped = false;
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  async function runBoot() {
+    setMode('DÉMARRAGE');
+    // Hard deadline: browser timer throttling (background tab) must not
+    // stretch the sequence forever.
+    const deadline = performance.now() + 6000;
+    for (const [label, status] of BOOT_LINES) {
+      if (performance.now() > deadline) bootSkipped = true;
+      if (bootSkipped) break;
+      const lineSpan = document.createElement('span');
+      bootText.appendChild(lineSpan);
+      bootText.appendChild(cursorSpan);
+      for (let i = 0; i < label.length && !bootSkipped; i++) {
+        if (performance.now() > deadline) { bootSkipped = true; break; }
+        lineSpan.textContent += label[i];
+        await sleep(rand(4, 14));
+      }
+      if (status) {
+        await sleep(bootSkipped ? 0 : rand(90, 320));
+        const st = document.createElement('span');
+        st.className = (status === 'OK' || status === 'ACTIFS') ? 'ok' : 'warn';
+        st.textContent = status;
+        bootText.insertBefore(st, cursorSpan);
+      }
+      bootText.insertBefore(document.createTextNode('\n'), cursorSpan);
+      if (!bootSkipped) await sleep(rand(40, 160));
+    }
+    if (bootSkipped) {
+      bootText.textContent = '';
+      for (const [label, status] of BOOT_LINES) {
+        bootText.appendChild(document.createTextNode(label));
+        if (status) {
+          const st = document.createElement('span');
+          st.className = (status === 'OK' || status === 'ACTIFS') ? 'ok' : 'warn';
+          st.textContent = status;
+          bootText.appendChild(st);
+        }
+        bootText.appendChild(document.createTextNode('\n'));
+      }
+    }
+    await sleep(500);
+    $('boot').classList.add('done');
+    hud.classList.add('on');
+    booted = true;
+    setMode('VEILLE');
+    burst = 1.2;
+    setTimeout(() => $('boot').remove(), 1600);
+    flashHint('Cliquez pour activer le micro');
+  }
+  runBoot();
+
+  // ---------------- Input ----------------
+  // getUserMedia and the AudioContext both need a user gesture, so the
+  // microphone can only start on the first click or key press.
+  document.body.addEventListener('click', () => {
+    if (!booted) { bootSkipped = true; return; }
+    toggleMic();
+  });
+
+  document.body.addEventListener('keydown', e => {
+    if (!booted) { bootSkipped = true; return; }
+    if (e.code === 'KeyM' || e.code === 'Space' || e.code === 'Enter') toggleMic();
+  });
+})();
+</script>
+</body>
+</html>
