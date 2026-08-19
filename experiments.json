@@ -1,0 +1,53 @@
+[
+  {
+    "slug": "abyss",
+    "title": "Abyss",
+    "line": "Une descente sans fin dans un abysse bioluminescent, généré à la volée.",
+    "stack": "Three.js · WebGL2 · shaders",
+    "shot": { "hash": "d=120" }
+  },
+  {
+    "slug": "living-orb",
+    "title": "Orbe vivante",
+    "line": "Elle respire, bat, vous suit du regard et se lasse si vous insistez.",
+    "stack": "Three.js · TypeScript · shaders"
+  },
+  {
+    "slug": "gargantua",
+    "title": "Gargantua",
+    "line": "Un trou noir, son disque d'accrétion et la lumière qui s'y courbe.",
+    "stack": "Three.js · WebGL2 · shaders"
+  },
+  {
+    "slug": "kepler-442c",
+    "title": "Kepler-442c",
+    "line": "Relevé orbital d'une exoplanète dont chaque continent est calculé.",
+    "stack": "Three.js · WebGL2 · bruit procédural",
+    "shot": { "wait": 20000 }
+  },
+  {
+    "slug": "drift",
+    "title": "Drift",
+    "line": "Un instrument ambient qui compose seul. À écouter au casque.",
+    "stack": "Web Audio · WebGL · shaders",
+    "shot": { "click": false }
+  },
+  {
+    "slug": "cyberpunk-city",
+    "title": "Neon District",
+    "line": "Un quartier néon sous la pluie, filmé par une caméra qui ne s'arrête jamais.",
+    "stack": "Three.js · WebGL"
+  },
+  {
+    "slug": "iss",
+    "title": "ISS",
+    "line": "La Station spatiale internationale, module par module, en orbite.",
+    "stack": "Three.js · WebGL"
+  },
+  {
+    "slug": "jarvis",
+    "title": "J.A.R.V.I.S.",
+    "line": "Une sculpture holographique qui réagit à votre voix. Micro requis.",
+    "stack": "Three.js · Web Audio"
+  }
+]
