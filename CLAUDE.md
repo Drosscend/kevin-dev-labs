@@ -16,7 +16,8 @@ lien, ne sont jamais indexées et n'ont aucune page de connexion.
   - `site/index.html` : une carte par expérience, écrites à la main.
   - `site/src/app.css` : tokens, polices et accent copiés du site principal.
   - `site/public/thumbs/<slug>.jpg` : vignettes, 1200 x 750.
-  - `site/public/robots.txt` : `Disallow: /` sur tout le domaine.
+  - `site/public/robots.txt` : `Allow: /`, volontairement. Le crawl doit
+    rester ouvert pour que l'en-tête `X-Robots-Tag: noindex` soit lu.
   - `site/analytics.html` : la balise Umami, injectée au build. Pas publiée.
 - `experiments/<slug>/` : une expérience. Le nom du dossier est son URL.
 - `dist/` : sortie du build, ignorée par git.
@@ -62,8 +63,11 @@ curl -sI https://labs.kevin-dev.com/ | grep -i "x-robots"
 - Ne pas mettre de secret ni de donnée personnelle : le dépôt est public et le
   site est ouvert à qui a le lien.
 - Ne pas ajouter de page de connexion ni d'authentification.
-- Ne pas retirer `robots.txt` ni l'en-tête `X-Robots-Tag` du `Caddyfile` : le
-  proxy en pose un troisième, les trois protègent la même chose.
+- Ne pas retirer l'en-tête `X-Robots-Tag` du `Caddyfile` : c'est lui, doublé
+  par celui du proxy, qui tient les pages hors des moteurs.
+- Ne pas remettre `Disallow: /` dans `robots.txt` : le portfolio pointe vers
+  labs, donc un crawler qui ne peut pas lire les pages indexerait les URL
+  nues, sans jamais voir le `noindex`.
 - Ne pas ajouter de backend : Caddy ne sert que des fichiers. Une expérience
   qui a besoin d'un serveur ne va pas ici.
 - Ne pas référencer d'asset par un chemin absolu dans une expérience buildée.

@@ -1,2 +1,4 @@
+# Crawling is allowed on purpose: every response carries X-Robots-Tag with
+# noindex, and a crawler kept out by this file would never get to read it.
 User-agent: *
-Disallow: /
+Allow: /

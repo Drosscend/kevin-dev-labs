@@ -34,6 +34,6 @@ bunx serve dist
 Un push sur `main` construit le `Dockerfile` et met le site en ligne sur
 `labs.kevin-dev.com`.
 
-Caddy pose `X-Robots-Tag: noindex` sur toute réponse, et `robots.txt`
-interdit l'ensemble du domaine : les expériences restent hors des moteurs
-de recherche sans aucune page de connexion.
+Caddy pose `X-Robots-Tag: noindex` sur toute réponse : les expériences
+restent hors des moteurs de recherche sans aucune page de connexion. Le
+`robots.txt` laisse le crawl ouvert, sinon cet en-tête ne serait jamais lu.
