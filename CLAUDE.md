@@ -6,8 +6,10 @@ lien, ne sont jamais indexées et n'ont aucune page de connexion.
 
 ## Prérequis
 
-- **Bun** : `build.sh` appelle `bun install` et `bun run build`.
-- Rien d'autre : aucune base, aucune variable d'environnement, aucun secret.
+- **Bun 1.4 ou plus** : `build.sh` appelle `bun install` et `bun run build`,
+  et `tools/shots.ts` s'appuie sur `Bun.WebView` et `Bun.Image`.
+- Rien d'autre : aucune base, aucune variable d'environnement, aucun secret,
+  aucun navigateur à installer.
 - Docker seulement pour reproduire le déploiement en local.
 
 ## Structure
