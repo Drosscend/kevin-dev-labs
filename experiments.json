@@ -50,5 +50,12 @@
     "title": "J.A.R.V.I.S.",
     "line": "Une sculpture holographique qui réagit à votre voix. Micro requis.",
     "stack": "Three.js · Web Audio"
+  },
+  {
+    "slug": "voxel-city",
+    "title": "Ville en pixels",
+    "line": "Un pâté de maisons en voxels de 5 cm, à raser à la dynamite.",
+    "stack": "Three.js · Rapier · Web Workers",
+    "shot": { "click": false, "wait": 4000 }
   }
 ]
